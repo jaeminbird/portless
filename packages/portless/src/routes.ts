@@ -162,6 +162,11 @@ export class RouteStore {
   // Route I/O
   // ---------------------------------------------------------------------------
 
+  /** Whether the process that owns `route` is still running. */
+  isRouteOwnerAlive(route: RouteMapping): boolean {
+    return route.pid === 0 || this.isProcessAlive(route.pid);
+  }
+
   private isProcessAlive(pid: number): boolean {
     try {
       process.kill(pid, 0);
@@ -378,6 +383,12 @@ export class RouteStore {
       const route = routes.find((r) => r.hostname === hostname && r.pid === fromPid);
       if (!route) return false;
       route.pid = toPid;
+      // Tunnels and Serve config stop with the previous owner.
+      delete route.ngrokUrl;
+      delete route.ngrokPid;
+      delete route.tailscaleUrl;
+      delete route.tailscaleHttpsPort;
+      delete route.tailscaleFunnel;
       this.saveRoutes(routes);
       return true;
     } finally {

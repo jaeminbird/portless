@@ -9,6 +9,10 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, "../../../packages/portless/dist/cli.js");
 const FIXTURE_PATH = path.resolve(__dirname, "../fixtures/self-daemon/launcher.sh");
+const DETACHED_FIXTURE_PATH = path.resolve(
+  __dirname,
+  "../fixtures/self-daemon/detached-launcher.mjs"
+);
 const PROXY_PORT = 19121;
 
 let stateDir: string | undefined;
@@ -142,10 +146,40 @@ describe.skipIf(process.platform === "win32")("self-daemonizing command lifecycl
     expect(findPidsOnPort(appPort)).toEqual([route!.pid]);
     expect(await requestThroughProxy(route!.hostname)).toBe(200);
 
+    // Let the proxy settle on the transferred route, as it would for a daemon
+    // that runs for a while.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     process.kill(route!.pid, "SIGTERM");
     await waitFor(() => findPidsOnPort(appPort!).length === 0);
+    // An unrelated server on the same port must not answer for the old hostname.
+    const unrelated = http.createServer((_, response) => response.end("unrelated"));
+    await new Promise<void>((resolve) => unrelated.listen(appPort, "127.0.0.1", resolve));
+    try {
+      expect(await requestThroughProxy(route!.hostname)).not.toBe(200);
+    } finally {
+      await new Promise((resolve) => unrelated.close(resolve));
+    }
     const list = spawnSync(process.execPath, [CLI_PATH, "list"], { env, encoding: "utf8" });
     expect(list.stdout).not.toContain("self-daemon.localhost");
+  });
+
+  it("keeps the route for a detached daemon that binds after the launcher exits", async () => {
+    const env = startProxy();
+
+    cliChild = spawn(
+      process.execPath,
+      [CLI_PATH, "detached", process.execPath, DETACHED_FIXTURE_PATH],
+      {
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      }
+    );
+    expect(await waitForExit(cliChild)).toBe(0);
+
+    const route = readRoutes().find((entry) => entry.hostname === "detached.localhost");
+    expect(route).toBeDefined();
+    appPort = route!.port;
+    expect(await requestThroughProxy(route!.hostname)).toBe(200);
   });
 
   it("removes the route when a foreground command exits", async () => {

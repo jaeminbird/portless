@@ -573,9 +573,15 @@ async function transferRoutesToDaemon(
   hostnames: readonly string[],
   port: number,
   processGroupId: number | undefined,
-  preexistingPid: number | null
+  preexistingPid: number | null,
+  exitedCleanly: boolean
 ): Promise<void> {
-  const listenerPid = await findSelfDaemonizedListener(port, processGroupId, EXIT_TIMEOUT_MS);
+  const listenerPid = await findSelfDaemonizedListener(
+    port,
+    processGroupId,
+    EXIT_TIMEOUT_MS,
+    exitedCleanly
+  );
   if (listenerPid === null || listenerPid === preexistingPid) return;
   let transferred = false;
   for (const hostname of hostnames) {
@@ -769,7 +775,12 @@ function startProxyServer(
 
   const createServer = () =>
     createProxyServer({
-      getRoutes: () => cachedRoutes,
+      // A route handed to a self-daemonized server outlives the file's last
+      // change, so a dead owner triggers a reload instead of serving it.
+      getRoutes: () => {
+        if (!cachedRoutes.every((route) => store.isRouteOwnerAlive(route))) reloadRoutes();
+        return cachedRoutes;
+      },
       proxyPort,
       tld,
       tlds,
@@ -1633,8 +1644,8 @@ async function runApp(
       ...(ngrokUrl ? { PORTLESS_NGROK_URL: ngrokUrl } : {}),
       ...caEnv,
     },
-    onExit: (childPid) =>
-      transferRoutesToDaemon(store, hostnames, port, childPid, preexistingListener),
+    onExit: (childPid, code) =>
+      transferRoutesToDaemon(store, hostnames, port, childPid, preexistingListener, code === 0),
     onSpawn: (pid) => {
       const childStartTime = getProcessStartTime(pid) ?? undefined;
       for (const host of hostnames) {
@@ -3820,7 +3831,8 @@ async function spawnProxiedApp(
             capturedHostnames,
             capturedPort,
             child.pid,
-            preexistingListener
+            preexistingListener,
+            code === 0
           );
       transfer
         .catch(() => {

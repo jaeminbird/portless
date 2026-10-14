@@ -1295,15 +1295,16 @@ function isProcessGroupAlive(groupId: number): boolean {
 /**
  * Find the listener a command left on `port` after its launcher exited, for
  * commands that self-daemonize (print an address and exit while the server
- * keeps running). On Unix the wait lasts while processes from the launcher's
- * process group are alive, up to `timeoutMs`; a plain foreground exit leaves
- * the group empty and returns at once. Windows has no process group to watch,
- * so it checks once.
+ * keeps running). The wait lasts up to `timeoutMs` while processes from the
+ * launcher's process group are alive, or after a clean exit, since a detached
+ * daemon leaves the group and may bind later. A failed foreground exit with an
+ * empty group returns at once. Windows has no process group to watch.
  */
 export async function findSelfDaemonizedListener(
   port: number,
   processGroupId: number | undefined,
-  timeoutMs: number
+  timeoutMs: number,
+  exitedCleanly = false
 ): Promise<number | null> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -1311,9 +1312,9 @@ export async function findSelfDaemonizedListener(
       const pid = findPidOnPort(port);
       if (pid !== null) return pid;
     }
-    if (isWindows || processGroupId === undefined || !isProcessGroupAlive(processGroupId)) {
-      return null;
-    }
+    const groupAlive =
+      !isWindows && processGroupId !== undefined && isProcessGroupAlive(processGroupId);
+    if (!groupAlive && !exitedCleanly) return null;
     if (Date.now() >= deadline) return null;
     await new Promise((resolve) => setTimeout(resolve, COMMAND_SHUTDOWN_POLL_MS));
   }
@@ -1472,7 +1473,7 @@ export function spawnCommand(
     env?: NodeJS.ProcessEnv;
     onCleanup?: () => void;
     /** Awaited after the command exits on its own, before cleanup runs. */
-    onExit?: (childPid: number | undefined) => Promise<void>;
+    onExit?: (childPid: number | undefined, code: number | null) => Promise<void>;
     /** Called with the child's PID, which is also its process group on Unix. */
     onSpawn?: (pid: number) => void;
   }
@@ -1602,7 +1603,7 @@ export function spawnCommand(
       finish(code ?? 1);
       return;
     }
-    onExit(child.pid)
+    onExit(child.pid, code)
       .catch(() => {
         // Exit hooks are best-effort.
       })
