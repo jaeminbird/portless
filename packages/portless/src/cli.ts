@@ -59,6 +59,7 @@ import {
   discoverState,
   findFreePort,
   findPidOnPort,
+  guardWindowsOrphans,
   findPidsOnPort,
   findSelfDaemonizedListener,
   killOrphanedProcessGroup,
@@ -4106,6 +4107,7 @@ async function runWithTurbo(
         ? ["bunx", "turbo", "run", scriptName, ...extraArgs]
         : [pm, "exec", "turbo", "run", scriptName, ...extraArgs];
 
+  const turboSpawnedAt = Date.now();
   const turboChild = spawn(turboArgs[0], turboArgs.slice(1), {
     stdio: "inherit",
     cwd: wsRoot,
@@ -4115,6 +4117,7 @@ async function runWithTurbo(
     },
     ...(isWindows ? {} : { detached: true }),
   });
+  guardWindowsOrphans(turboChild, turboSpawnedAt);
 
   const SIGKILL_TIMEOUT_MS = 5_000;
 
