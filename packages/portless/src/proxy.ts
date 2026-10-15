@@ -38,8 +38,7 @@ const HOP_BY_HOP_HEADERS = new Set([
 // HTTP/2 multiplexes a whole cold page load onto one client connection, so
 // without a limit the proxy dials the backend once per request at the same
 // instant and overflows its accept backlog. Only dials in progress are
-// limited, and waiting requests take the next idle pooled socket, so
-// long-lived responses such as SSE never starve other requests.
+// limited, so long-lived responses such as SSE never starve other requests.
 const MAX_PENDING_UPSTREAM_DIALS = 16;
 
 const REPLAYABLE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -288,7 +287,7 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
   };
   const hasIdleSocket = (port: number) =>
     (upstreamAgent.freeSockets[upstreamAgent.getName({ port })]?.length ?? 0) > 0;
-  // Start waiting requests while a pooled socket is idle or a dial slot is open.
+  // Start waiting requests once a dial settles and a slot or idle socket is free.
   const drainUpstream = (port: number) => {
     const state = upstream.get(port);
     if (!state) return;
@@ -322,7 +321,6 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
     socket.once("close", settle);
     return socket;
   };
-  upstreamAgent.on("free", (_socket, options) => drainUpstream(options.port as number));
 
   const handleRequest = (req: http.IncomingMessage, res: http.ServerResponse, isReplay = false) => {
     const reqTls = isEncrypted(req);
