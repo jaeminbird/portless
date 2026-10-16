@@ -261,7 +261,7 @@ describe("RouteStore", () => {
     it("refuses to replace a static alias without --force", () => {
       store.addRoute("db.localhost", 5432, 0);
       expect(() => store.addRoute("db.localhost", 4002, process.pid)).toThrow(
-        '"db.localhost" is a static alias. Use --force to replace it.'
+        '"db.localhost" is a static alias. Use --force to replace it; re-add the alias with "portless alias" afterwards.'
       );
     });
 

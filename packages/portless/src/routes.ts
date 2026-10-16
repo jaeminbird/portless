@@ -66,7 +66,7 @@ export class RouteConflictError extends Error {
   constructor(hostname: string, existingPid: number) {
     super(
       existingPid === 0
-        ? `"${hostname}" is a static alias. Use --force to replace it.`
+        ? `"${hostname}" is a static alias. Use --force to replace it; re-add the alias with "portless alias" afterwards.`
         : `"${hostname}" is already registered by a running process (PID ${existingPid}). ` +
             `Use --force to override.`
     );
