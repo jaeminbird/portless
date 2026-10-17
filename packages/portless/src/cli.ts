@@ -1780,6 +1780,7 @@ ${colors.bold("Options:")}
   --tailscale            Share the app on your Tailscale network (tailnet)
   --funnel               Share the app publicly via Tailscale Funnel
   --ngrok                Share the app publicly via ngrok
+  --cloudflare           Share the app publicly via a Cloudflare quick tunnel
   --help, -h             Show this help
 
 ${colors.bold("Name inference (in order):")}
@@ -2059,6 +2060,7 @@ ${colors.bold("Options:")}
   --tailscale                   Share the app on your Tailscale network (tailnet)
   --funnel                      Share the app publicly via Tailscale Funnel
   --ngrok                       Share the app publicly via ngrok
+  --cloudflare                  Share the app publicly via a Cloudflare quick tunnel
   --force                       Kill the existing process and take over its route
   --name <name>                 Use <name> as the app name (bypasses subcommand dispatch)
   --                            Stop flag parsing; everything after is passed to the child
@@ -2075,6 +2077,7 @@ ${colors.bold("Environment variables:")}
   PORTLESS_TAILSCALE=1          Share apps on your Tailscale network (same as --tailscale)
   PORTLESS_FUNNEL=1             Share apps publicly via Tailscale Funnel (same as --funnel)
   PORTLESS_NGROK=1              Share apps publicly via ngrok (same as --ngrok)
+  PORTLESS_CLOUDFLARE=1         Share apps publicly via Cloudflare (same as --cloudflare)
   PORTLESS_STATE_DIR=<path>     Override the state directory
   PORTLESS=0                    Run command directly without proxy
 
@@ -2085,6 +2088,7 @@ ${colors.bold("Child process environment:")}
   PORTLESS_LAN                  Set to 1 when proxy is in LAN mode
   PORTLESS_TAILSCALE_URL        Tailscale URL of the app (when --tailscale is active)
   PORTLESS_NGROK_URL            ngrok URL of the app (when --ngrok is active)
+  PORTLESS_CLOUDFLARE_URL       Cloudflare URL of the app (when --cloudflare is active)
   NODE_EXTRA_CA_CERTS           Path to the portless CA (set when HTTPS is active)
 
 ${colors.bold("Safari / DNS:")}

@@ -328,6 +328,8 @@ describe("CLI", () => {
       expect(stdout).toContain("--ngrok");
       expect(stdout).toContain("PORTLESS_NGROK");
       expect(stdout).toContain("PORTLESS_NGROK_URL");
+      expect(stdout).toContain("--cloudflare");
+      expect(stdout).toContain("PORTLESS_CLOUDFLARE_URL");
       expect(stdout).toContain("portless clean");
     });
 
