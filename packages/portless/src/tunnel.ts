@@ -39,7 +39,7 @@ export interface StartedNgrok {
   child: TunnelChildProcess;
 }
 
-interface TunnelProvider {
+export interface TunnelProvider {
   binary: string;
   versionArgs: string[];
   buildArgs(localPort: number, options: StartNgrokOptions): string[];
@@ -73,7 +73,7 @@ function defaultRunner(binary: string, args: string[]): TunnelCommandResult {
   };
 }
 
-function normalizeSpace(value: string): string {
+export function normalizeSpace(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
@@ -102,7 +102,7 @@ function formatOutputError(output: string): Error {
   );
 }
 
-function ensureTunnelAvailable(
+export function ensureTunnelAvailable(
   provider: TunnelProvider,
   runner: TunnelCommandRunner = (args) => defaultRunner(provider.binary, args)
 ): void {
@@ -182,7 +182,7 @@ export function startNgrok(
   return startTunnel(ngrok, localPort, options);
 }
 
-function startTunnel(
+export function startTunnel(
   provider: TunnelProvider,
   localPort: number,
   options: StartNgrokOptions
@@ -263,10 +263,10 @@ export function stopNgrokProcess(child: TunnelChildProcess | undefined): void {
   }
 }
 
-export function stopNgrok(route: { ngrokPid?: number }): void {
-  if (!route.ngrokPid) return;
+export function stopTunnelPid(pid: number | undefined): void {
+  if (!pid) return;
   try {
-    process.kill(route.ngrokPid, "SIGTERM");
+    process.kill(pid, "SIGTERM");
   } catch {
     // Process may already be gone, or may belong to another user.
   }

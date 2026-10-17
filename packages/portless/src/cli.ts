@@ -39,7 +39,7 @@ import {
   registerServe,
   unregisterTailscale,
 } from "./tailscale.js";
-import { ensureNgrokAvailable, startNgrok, stopNgrok, stopNgrokProcess } from "./tunnel.js";
+import { ensureNgrokAvailable, startNgrok, stopNgrokProcess, stopTunnelPid } from "./tunnel.js";
 import {
   inferProjectName,
   detectWorktreePrefix,
@@ -2181,7 +2181,7 @@ ${colors.bold("Options:")}
       }
     }
     if (route.ngrokPid) {
-      stopNgrok(route);
+      stopTunnelPid(route.ngrokPid);
       console.log(colors.green(`Stopped ngrok tunnel for ${route.hostname}.`));
     }
   }
@@ -2279,7 +2279,7 @@ ${colors.bold("Options:")}
       }
     }
     if (route.ngrokPid) {
-      stopNgrok(route);
+      stopTunnelPid(route.ngrokPid);
       console.log(`  ${route.hostname} - stopped ngrok tunnel`);
     }
   }
