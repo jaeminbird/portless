@@ -271,7 +271,6 @@ Set `PORTLESS_NGROK=1` to enable ngrok by default when portless runs an app. `po
 
 ```bash
 portless myapp --cloudflare next dev
-# -> https://myapp.localhost           (local)
 # -> https://<random>.trycloudflare.com (public internet)
 ```
 

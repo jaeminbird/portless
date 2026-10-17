@@ -389,13 +389,10 @@ Expose your dev server to the public internet with a Cloudflare quick tunnel. No
 
 ```bash
 portless myapp --cloudflare next dev
-# -> https://myapp.localhost           (local)
 # -> https://<random>.trycloudflare.com (public)
 ```
 
-Set `PORTLESS_CLOUDFLARE=1` to enable it by default. `portless list` shows the Cloudflare URL, and the app gets it as `PORTLESS_CLOUDFLARE_URL`. You can combine it with `--ngrok`, `--tailscale` or `--funnel`. The tunnel stops when the app exits. Quick tunnels do not support Server-Sent Events, allow at most 200 in-flight requests, and get a new URL on every run.
-
-Requires the [`cloudflared`](https://developers.cloudflare.com/tunnel/downloads/) CLI on your PATH.
+Set `PORTLESS_CLOUDFLARE=1` to enable it by default. `portless list` shows the Cloudflare URL, and the app gets it as `PORTLESS_CLOUDFLARE_URL`. You can combine it with `--ngrok`, `--tailscale` or `--funnel`. The tunnel stops when the app exits. Quick tunnels do not support Server-Sent Events, allow at most 200 in-flight requests, and get a new URL on every run. Requires the [`cloudflared`](https://developers.cloudflare.com/tunnel/downloads/) CLI on your PATH.
 
 ## Commands
 
