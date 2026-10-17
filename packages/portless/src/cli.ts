@@ -1780,7 +1780,7 @@ ${colors.bold("Options:")}
   --tailscale            Share the app on your Tailscale network (tailnet)
   --funnel               Share the app publicly via Tailscale Funnel
   --ngrok                Share the app publicly via ngrok
-  --cloudflare           Share the app publicly via a Cloudflare quick tunnel
+  --cloudflare           Share the app publicly via a Cloudflare quick tunnel (requires cloudflared)
   --help, -h             Show this help
 
 ${colors.bold("Name inference (in order):")}
@@ -2060,7 +2060,7 @@ ${colors.bold("Options:")}
   --tailscale                   Share the app on your Tailscale network (tailnet)
   --funnel                      Share the app publicly via Tailscale Funnel
   --ngrok                       Share the app publicly via ngrok
-  --cloudflare                  Share the app publicly via a Cloudflare quick tunnel
+  --cloudflare                  Share the app publicly via a Cloudflare quick tunnel (requires cloudflared)
   --force                       Kill the existing process and take over its route
   --name <name>                 Use <name> as the app name (bypasses subcommand dispatch)
   --                            Stop flag parsing; everything after is passed to the child
