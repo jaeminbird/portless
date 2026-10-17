@@ -7,10 +7,10 @@ import {
   extractNgrokUrl,
   startNgrok,
   stopNgrokProcess,
-  type NgrokCommandRunner,
-  type NgrokChildProcess,
-  type NgrokSpawner,
-} from "./ngrok.js";
+  type TunnelCommandRunner as NgrokCommandRunner,
+  type TunnelChildProcess as NgrokChildProcess,
+  type TunnelSpawner as NgrokSpawner,
+} from "./tunnel.js";
 
 class MockNgrokChild extends EventEmitter {
   pid = 12345;

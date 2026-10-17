@@ -39,7 +39,7 @@ import {
   registerServe,
   unregisterTailscale,
 } from "./tailscale.js";
-import { ensureNgrokAvailable, startNgrok, stopNgrok, stopNgrokProcess } from "./ngrok.js";
+import { ensureNgrokAvailable, startNgrok, stopNgrok, stopNgrokProcess } from "./tunnel.js";
 import {
   inferProjectName,
   detectWorktreePrefix,
