@@ -1,7 +1,6 @@
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as os from "node:os";
-import * as path from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { buildCloudflareArgs, extractCloudflareUrl, startCloudflare } from "./cloudflare.js";
@@ -198,67 +197,46 @@ describe("ngrok", () => {
   });
 });
 
-const DISCLAIMER =
-  "2026-10-16T12:00:00Z INF Thank you for trying Cloudflare Tunnel. Doing so, without a Cloudflare account, is a quick way to experiment and try it out. However, be aware that these account-less Tunnels have no uptime guarantee, are subject to the Cloudflare Online Services Terms of Use (https://www.cloudflare.com/website-terms/), and Cloudflare reserves the right to investigate your use of Tunnels for violations of such terms.\n";
 const BANNER =
-  "2026-10-16T12:00:01Z INF |  https://example-words-abcd.trycloudflare.com                                          |\n";
-const REGISTERED =
-  "2026-10-16T12:00:02Z INF Registered tunnel connection connIndex=0 connection=8a1f location=sjc01 protocol=quic\n";
-const QUICK_URL = "https://example-words-abcd.trycloudflare.com";
+  "INF Thank you for trying Cloudflare Tunnel.\nINF |  https://red-fox-ab.trycloudflare.com  |\n";
+const REGISTERED = "INF Registered tunnel connection connIndex=0 protocol=quic\n";
+const QUICK_URL = "https://red-fox-ab.trycloudflare.com";
+const configPath = `${fs.mkdtempSync(`${os.tmpdir()}/portless-cf-`)}/c.yml`;
 
 describe("cloudflare", () => {
   it("builds a quick tunnel command that ignores the user config", () => {
-    expect(buildCloudflareArgs(4123, "myapp.localhost", "/s/cloudflared.yml")).toEqual([
-      "tunnel",
-      "--no-autoupdate",
-      "--grace-period",
-      "1s",
-      "--config",
-      "/s/cloudflared.yml",
-      "--url",
-      "http://127.0.0.1:4123",
-      "--http-host-header",
-      "myapp.localhost",
-    ]);
+    expect(buildCloudflareArgs(4123, "myapp.localhost", "/c.yml").join(" ")).toBe(
+      "tunnel --no-autoupdate --grace-period 1s --config /c.yml --url http://127.0.0.1:4123 --http-host-header myapp.localhost"
+    );
   });
 
   it("reports the URL only once a connection is registered", () => {
-    expect(extractCloudflareUrl(DISCLAIMER + BANNER)).toBeNull();
-    expect(extractCloudflareUrl(DISCLAIMER + BANNER + REGISTERED)).toBe(QUICK_URL);
+    expect(extractCloudflareUrl(BANNER)).toBeNull();
+    expect(extractCloudflareUrl(BANNER + REGISTERED)).toBe(QUICK_URL);
     expect(extractCloudflareUrl("https://api.trycloudflare.com\n" + REGISTERED)).toBeNull();
-    const older = "INF Connection 4b2f8c1e-0d3a-4e5f-9a7b-1c2d3e4f5a6b registered connIndex=0\n";
-    expect(extractCloudflareUrl(BANNER + older)).toBe(QUICK_URL);
+    expect(extractCloudflareUrl(BANNER + "INF Connection 4b2f-9a7b registered\n")).toBe(QUICK_URL);
   });
 
   it("writes an empty config and resolves once connected", async () => {
-    const configPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "portless-cf-")), "c.yml");
     const child = new MockNgrokChild();
-    const promise = startCloudflare(4123, {
-      configPath,
-      hostHeader: "myapp.localhost",
-      spawner: createSpawner(child),
-      timeoutMs: 1000,
-    });
+    const promise = startCloudflare(4123, { configPath, spawner: createSpawner(child) });
     expect(fs.readFileSync(configPath, "utf-8")).toBe("{}");
-    child.stderr.write(DISCLAIMER + BANNER + REGISTERED);
+    child.stderr.write(BANNER + REGISTERED);
     await expect(promise).resolves.toMatchObject({ url: QUICK_URL, pid: 12345 });
   });
 
   it("reports ERR lines, or a generic message, when cloudflared exits early", async () => {
-    const configPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "portless-cf-")), "c.yml");
-    const start = (output: string) => {
+    const fail = (output: string) => {
       const child = new MockNgrokChild();
       const promise = startCloudflare(4123, { configPath, spawner: createSpawner(child) });
       child.stderr.write(output);
       child.emit("exit", 1, null);
       return promise.catch((err: Error) => err.message);
     };
-    const err = "2026-10-16T12:00:01Z ERR failed to request quick Tunnel: dial tcp: i/o timeout\n";
-    const message = await start(DISCLAIMER + err);
-    expect(message).toContain("ERR failed to request quick Tunnel: dial tcp: i/o timeout");
-    expect(message).not.toContain("Thank you for trying");
-    expect(message).toMatch(/ \(exit 1\)$/);
-    expect(await start(DISCLAIMER)).toBe(
+    expect(await fail(BANNER + "2026-10-16T12:00:01Z ERR failed to request quick Tunnel\n")).toBe(
+      "Failed to start Cloudflare tunnel: 2026-10-16T12:00:01Z ERR failed to request quick Tunnel (exit 1)"
+    );
+    expect(await fail(BANNER)).toBe(
       "Failed to start Cloudflare tunnel: cloudflared exited before connecting (exit 1)"
     );
   });
