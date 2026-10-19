@@ -236,6 +236,29 @@ function findRoute(
   );
 }
 
+/**
+ * Send a portless-generated error as the HTML page when the client accepts text/html, otherwise as a small JSON body.
+ * `renderHtml` is only called for HTML clients, so JSON clients never pay for building the page.
+ */
+function sendProxyError(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  status: number,
+  error: string,
+  message: string,
+  host: string,
+  renderHtml: () => string
+): void {
+  res.setHeader("Vary", "Accept");
+  if ((req.headers.accept ?? "").toLowerCase().includes("text/html")) {
+    res.writeHead(status, { "Content-Type": "text/html" });
+    res.end(renderHtml());
+    return;
+  }
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify({ error, upstream: host, message }));
+}
+
 /** Server type returned by createProxyServer (plain HTTP/1.1 or net.Server TLS wrapper). */
 export type ProxyServer = http.Server | net.Server;
 
@@ -315,18 +338,24 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
           `This usually means a backend is proxying back through portless without rewriting ` +
           `the Host header. If you use Vite/webpack proxy, set changeOrigin: true.`
       );
-      res.writeHead(508, { "Content-Type": "text/html" });
-      res.end(
-        renderPage(
-          508,
-          "Loop Detected",
-          `<div class="content"><p class="desc">This request has passed through portless ${hops} times. This usually means a dev server (Vite, webpack, etc.) is proxying requests back through portless without rewriting the Host header.</p><div class="section"><p class="label">Fix: add changeOrigin to your proxy config</p><pre class="terminal">proxy: {
+      sendProxyError(
+        req,
+        res,
+        508,
+        "loop_detected",
+        `Request passed through portless ${hops} times`,
+        host,
+        () =>
+          renderPage(
+            508,
+            "Loop Detected",
+            `<div class="content"><p class="desc">This request has passed through portless ${hops} times. This usually means a dev server (Vite, webpack, etc.) is proxying requests back through portless without rewriting the Host header.</p><div class="section"><p class="label">Fix: add changeOrigin to your proxy config</p><pre class="terminal">proxy: {
   "/api": {
     target: "${reqTls ? "https" : "http"}://&lt;backend&gt;${escapeHtml(primaryTldSuffix)}${reqTls ? "" : ":&lt;port&gt;"}",
     changeOrigin: true,
   },
 }</pre></div></div>`
-        )
+          )
       );
       return;
     }
@@ -347,8 +376,7 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
         routes.length > 0
           ? `<div class="section"><p class="label">Active apps</p><ul class="card">${routes.map((r) => `<li><a href="${escapeHtml(formatUrl(r.hostname, proxyPort, reqTls))}" class="card-link"><span class="name">${escapeHtml(r.hostname)}</span><span class="meta"><code class="port">127.0.0.1:${escapeHtml(String(r.port))}</code><span class="arrow">${ARROW_SVG}</span></span></a></li>`).join("")}</ul></div>`
           : '<p class="empty">No apps running.</p>';
-      res.writeHead(404, { "Content-Type": "text/html" });
-      res.end(
+      sendProxyError(req, res, 404, "not_found", `No app registered for ${host}`, host, () =>
         renderPage(
           404,
           "Not Found",
@@ -419,8 +447,7 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
           errWithCode.code === "ECONNREFUSED"
             ? "The target app is not responding. It may have crashed."
             : "The target app may not be running.";
-        res.writeHead(502, { "Content-Type": "text/html" });
-        res.end(
+        sendProxyError(req, res, 502, "bad_gateway", detail, getRequestHost(req), () =>
           renderPage(
             502,
             "Bad Gateway",

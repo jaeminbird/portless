@@ -26,6 +26,7 @@ function request(
     path?: string;
     method?: string;
     headers?: http.OutgoingHttpHeaders;
+    accept?: string | null;
   }
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
   return new Promise((resolve, reject) => {
@@ -33,13 +34,18 @@ function request(
     if (!addr || typeof addr === "string") {
       return reject(new Error("Server not listening"));
     }
+    const accept = options.accept === undefined ? "text/html" : options.accept;
     const req = http.request(
       {
         hostname: options.hostname || "127.0.0.1",
         port: addr.port,
         path: options.path || "/",
         method: options.method || "GET",
-        headers: { host: options.host || "", ...options.headers },
+        headers: {
+          host: options.host || "",
+          ...(accept === null ? {} : { accept }),
+          ...options.headers,
+        },
       },
       (res) => {
         let body = "";
@@ -782,6 +788,148 @@ describe("createProxyServer", () => {
       expect(errors.length).toBeGreaterThan(0);
       expect(errors[0]).toContain("dead.localhost");
     });
+
+    const BROWSER_ACCEPT = "text/html,application/xhtml+xml,*/*;q=0.8";
+
+    const errorScenarios = [
+      {
+        name: "404",
+        status: 404,
+        error: "not_found",
+        host: "missing.localhost",
+        routes: [] as RouteInfo[],
+        headers: {} as http.OutgoingHttpHeaders,
+        message: "No app registered for missing.localhost",
+        htmlTitle: "Not Found",
+      },
+      {
+        name: "502",
+        status: 502,
+        error: "bad_gateway",
+        host: "dead.localhost",
+        routes: [{ hostname: "dead.localhost", port: 59999 }] as RouteInfo[],
+        headers: {} as http.OutgoingHttpHeaders,
+        message: "The target app is not responding. It may have crashed.",
+        htmlTitle: "Bad Gateway",
+      },
+      {
+        name: "508",
+        status: 508,
+        error: "loop_detected",
+        host: "app.localhost",
+        routes: [{ hostname: "app.localhost", port: 59999 }] as RouteInfo[],
+        headers: { "x-portless-hops": "5" } as http.OutgoingHttpHeaders,
+        message: "Request passed through portless 5 times",
+        htmlTitle: "Loop Detected",
+      },
+    ];
+
+    const jsonAccepts: [string, string | null][] = [
+      ["Accept: application/json", "application/json"],
+      ["Accept: */*", "*/*"],
+      ["no Accept header", null],
+    ];
+
+    describe.each(errorScenarios)("$name error page", (scenario) => {
+      it.each(jsonAccepts)("returns compact JSON for %s", async (_label, accept) => {
+        const server = trackServer(
+          createProxyServer({
+            getRoutes: () => scenario.routes,
+            proxyPort: TEST_PROXY_PORT,
+            onError: () => {},
+          })
+        );
+        await listen(server);
+
+        const res = await request(server, {
+          host: scenario.host,
+          accept,
+          headers: scenario.headers,
+        });
+        expect(res.status).toBe(scenario.status);
+        expect(res.headers["content-type"]).toBe("application/json; charset=utf-8");
+        expect(res.headers.vary).toBe("Accept");
+        expect(Buffer.byteLength(res.body)).toBeLessThan(1000);
+        expect(JSON.parse(res.body)).toEqual({
+          error: scenario.error,
+          upstream: scenario.host,
+          message: scenario.message,
+        });
+      });
+
+      it("returns the HTML page for a browser Accept header", async () => {
+        const server = trackServer(
+          createProxyServer({
+            getRoutes: () => scenario.routes,
+            proxyPort: TEST_PROXY_PORT,
+            onError: () => {},
+          })
+        );
+        await listen(server);
+
+        const res = await request(server, {
+          host: scenario.host,
+          accept: BROWSER_ACCEPT,
+          headers: scenario.headers,
+        });
+        expect(res.status).toBe(scenario.status);
+        expect(res.headers["content-type"]).toBe("text/html");
+        expect(res.headers.vary).toBe("Accept");
+        expect(res.body).toContain("<!DOCTYPE html>");
+        expect(res.body).toContain(scenario.htmlTitle);
+      });
+    });
+
+    it("keeps JSON valid and HTML escaped for hosts with special characters", async () => {
+      const routes: RouteInfo[] = [];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+      const host = '<script>"x\\y"</script>';
+
+      const json = await request(server, { host, accept: "application/json" });
+      expect(json.status).toBe(404);
+      expect(json.headers["content-type"]).toBe("application/json; charset=utf-8");
+      expect(JSON.parse(json.body)).toEqual({
+        error: "not_found",
+        upstream: host,
+        message: `No app registered for ${host}`,
+      });
+
+      const html = await request(server, { host, accept: BROWSER_ACCEPT });
+      expect(html.status).toBe(404);
+      expect(html.headers["content-type"]).toBe("text/html");
+      expect(html.body).not.toContain(host);
+      expect(html.body).not.toContain("<script>");
+      expect(html.body).toContain("&lt;script&gt;");
+    });
+
+    it("passes an upstream 5xx JSON response through unchanged for JSON clients", async () => {
+      const upstreamBody = '{"error":"database unavailable","retry":true}';
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(503, { "Content-Type": "application/json", "X-Backend": "yes" });
+          res.end(upstreamBody);
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "api.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "api.localhost", accept: "application/json" });
+      expect(res.status).toBe(503);
+      expect(res.headers["content-type"]).toBe("application/json");
+      expect(res.headers["x-backend"]).toBe("yes");
+      expect(res.headers.vary).toBeUndefined();
+      expect(res.body).toBe(upstreamBody);
+    });
   });
 
   describe("X-Portless header", () => {
@@ -843,6 +991,7 @@ describe("createProxyServer", () => {
             method: "GET",
             headers: {
               host: "app.localhost",
+              accept: "text/html",
               "x-portless-hops": "5",
             },
           },
@@ -1068,7 +1217,7 @@ describe("createProxyServer", () => {
             port: proxyAddr.port,
             path: "/api/tasks",
             method: "GET",
-            headers: { host: "frontend.localhost" },
+            headers: { host: "frontend.localhost", accept: "text/html" },
           },
           (res) => {
             let body = "";
@@ -1137,6 +1286,7 @@ describe("createProxyServer", () => {
             method: "GET",
             headers: {
               host: "app.test",
+              accept: "text/html",
               "x-portless-hops": "5",
             },
           },
@@ -1489,20 +1639,21 @@ describe("createProxyServer with TLS (HTTP/2)", () => {
 
   function httpsRequest(
     server: AnyServer,
-    options: { host?: string; path?: string; method?: string }
+    options: { host?: string; path?: string; method?: string; accept?: string | null }
   ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
     return new Promise((resolve, reject) => {
       const addr = server.address();
       if (!addr || typeof addr === "string") {
         return reject(new Error("Server not listening"));
       }
+      const accept = options.accept === undefined ? "text/html" : options.accept;
       const req = https.request(
         {
           hostname: "127.0.0.1",
           port: addr.port,
           path: options.path || "/",
           method: options.method || "GET",
-          headers: { host: options.host || "" },
+          headers: { host: options.host || "", ...(accept === null ? {} : { accept }) },
           rejectUnauthorized: false,
         },
         (res) => {
@@ -1612,6 +1763,56 @@ describe("createProxyServer with TLS (HTTP/2)", () => {
 
     expect(result.status).toBe(404);
     expect(result.protocol).toBe("h2");
+  });
+
+  it("returns compact JSON errors to HTTP/2 JSON clients", async () => {
+    const routes: RouteInfo[] = [];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const addr = server.address();
+    if (!addr || typeof addr === "string") throw new Error("no addr");
+
+    const result = await new Promise<{ headers: http2.IncomingHttpHeaders; body: string }>(
+      (resolve, reject) => {
+        const client = http2.connect(`https://127.0.0.1:${addr.port}`, {
+          rejectUnauthorized: false,
+        });
+        client.on("error", reject);
+        const req = client.request({
+          ":method": "GET",
+          ":path": "/",
+          ":authority": "missing.localhost",
+          accept: "application/json",
+        });
+        let body = "";
+        let headers: http2.IncomingHttpHeaders = {};
+        req.on("response", (h) => (headers = h));
+        req.on("data", (chunk: Buffer) => (body += chunk));
+        req.on("end", () => {
+          client.close();
+          resolve({ headers, body });
+        });
+        req.on("error", reject);
+        req.end();
+      }
+    );
+
+    expect(result.headers[":status"]).toBe(404);
+    expect(result.headers["content-type"]).toBe("application/json; charset=utf-8");
+    expect(result.headers.vary).toBe("Accept");
+    expect(Buffer.byteLength(result.body)).toBeLessThan(1000);
+    expect(JSON.parse(result.body)).toEqual({
+      error: "not_found",
+      upstream: "missing.localhost",
+      message: "No app registered for missing.localhost",
+    });
   });
 
   it("forwards the :authority hostname as Host to the backend (h2 -> HTTP/1.1)", async () => {
