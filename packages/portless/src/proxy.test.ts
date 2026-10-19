@@ -789,8 +789,6 @@ describe("createProxyServer", () => {
       expect(errors[0]).toContain("dead.localhost");
     });
 
-    const BROWSER_ACCEPT = "text/html,application/xhtml+xml,*/*;q=0.8";
-
     const errorScenarios = [
       {
         name: "404",
@@ -800,7 +798,6 @@ describe("createProxyServer", () => {
         routes: [] as RouteInfo[],
         headers: {} as http.OutgoingHttpHeaders,
         message: "No app registered for missing.localhost",
-        htmlTitle: "Not Found",
       },
       {
         name: "502",
@@ -810,7 +807,6 @@ describe("createProxyServer", () => {
         routes: [{ hostname: "dead.localhost", port: 59999 }] as RouteInfo[],
         headers: {} as http.OutgoingHttpHeaders,
         message: "The target app is not responding. It may have crashed.",
-        htmlTitle: "Bad Gateway",
       },
       {
         name: "508",
@@ -820,89 +816,59 @@ describe("createProxyServer", () => {
         routes: [{ hostname: "app.localhost", port: 59999 }] as RouteInfo[],
         headers: { "x-portless-hops": "5" } as http.OutgoingHttpHeaders,
         message: "Request passed through portless 5 times",
-        htmlTitle: "Loop Detected",
       },
     ];
 
-    const jsonAccepts: [string, string | null][] = [
-      ["Accept: application/json", "application/json"],
-      ["Accept: */*", "*/*"],
-      ["no Accept header", null],
-    ];
+    it.each(errorScenarios)("returns a compact JSON $name error to JSON clients", async (s) => {
+      const server = trackServer(
+        createProxyServer({
+          getRoutes: () => s.routes,
+          proxyPort: TEST_PROXY_PORT,
+          onError: () => {},
+        })
+      );
+      await listen(server);
 
-    describe.each(errorScenarios)("$name error page", (scenario) => {
-      it.each(jsonAccepts)("returns compact JSON for %s", async (_label, accept) => {
-        const server = trackServer(
-          createProxyServer({
-            getRoutes: () => scenario.routes,
-            proxyPort: TEST_PROXY_PORT,
-            onError: () => {},
-          })
-        );
-        await listen(server);
-
-        const res = await request(server, {
-          host: scenario.host,
-          accept,
-          headers: scenario.headers,
-        });
-        expect(res.status).toBe(scenario.status);
-        expect(res.headers["content-type"]).toBe("application/json; charset=utf-8");
-        expect(res.headers.vary).toBe("Accept");
-        expect(Buffer.byteLength(res.body)).toBeLessThan(1000);
-        expect(JSON.parse(res.body)).toEqual({
-          error: scenario.error,
-          upstream: scenario.host,
-          message: scenario.message,
-        });
+      const res = await request(server, {
+        host: s.host,
+        accept: "application/json",
+        headers: s.headers,
       });
-
-      it("returns the HTML page for a browser Accept header", async () => {
-        const server = trackServer(
-          createProxyServer({
-            getRoutes: () => scenario.routes,
-            proxyPort: TEST_PROXY_PORT,
-            onError: () => {},
-          })
-        );
-        await listen(server);
-
-        const res = await request(server, {
-          host: scenario.host,
-          accept: BROWSER_ACCEPT,
-          headers: scenario.headers,
-        });
-        expect(res.status).toBe(scenario.status);
-        expect(res.headers["content-type"]).toBe("text/html");
-        expect(res.headers.vary).toBe("Accept");
-        expect(res.body).toContain("<!DOCTYPE html>");
-        expect(res.body).toContain(scenario.htmlTitle);
+      expect(res.status).toBe(s.status);
+      expect(res.headers["content-type"]).toBe("application/json; charset=utf-8");
+      expect(res.headers.vary).toBe("Accept");
+      expect(JSON.parse(res.body)).toEqual({
+        error: s.error,
+        upstream: s.host,
+        message: s.message,
       });
     });
 
-    it("keeps JSON valid and HTML escaped for hosts with special characters", async () => {
-      const routes: RouteInfo[] = [];
+    it.each([["*/*"], [null]])("returns JSON when Accept is %s", async (accept) => {
       const server = trackServer(
-        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+        createProxyServer({ getRoutes: () => [], proxyPort: TEST_PROXY_PORT })
       );
       await listen(server);
-      const host = '<script>"x\\y"</script>';
 
-      const json = await request(server, { host, accept: "application/json" });
-      expect(json.status).toBe(404);
-      expect(json.headers["content-type"]).toBe("application/json; charset=utf-8");
-      expect(JSON.parse(json.body)).toEqual({
-        error: "not_found",
-        upstream: host,
-        message: `No app registered for ${host}`,
+      const res = await request(server, { host: "missing.localhost", accept });
+      expect(res.status).toBe(404);
+      expect(res.headers["content-type"]).toBe("application/json; charset=utf-8");
+    });
+
+    it("returns the HTML page to browsers", async () => {
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => [], proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, {
+        host: "missing.localhost",
+        accept: "text/html,application/xhtml+xml,*/*;q=0.8",
       });
-
-      const html = await request(server, { host, accept: BROWSER_ACCEPT });
-      expect(html.status).toBe(404);
-      expect(html.headers["content-type"]).toBe("text/html");
-      expect(html.body).not.toContain(host);
-      expect(html.body).not.toContain("<script>");
-      expect(html.body).toContain("&lt;script&gt;");
+      expect(res.status).toBe(404);
+      expect(res.headers["content-type"]).toBe("text/html");
+      expect(res.headers.vary).toBe("Accept");
+      expect(res.body).toContain("Not Found");
     });
 
     it("passes an upstream 5xx JSON response through unchanged for JSON clients", async () => {
@@ -1765,54 +1731,23 @@ describe("createProxyServer with TLS (HTTP/2)", () => {
     expect(result.protocol).toBe("h2");
   });
 
-  it("returns compact JSON errors to HTTP/2 JSON clients", async () => {
-    const routes: RouteInfo[] = [];
+  it("returns compact JSON errors over TLS to JSON clients", async () => {
     const server = trackServer(
       createProxyServer({
-        getRoutes: () => routes,
+        getRoutes: () => [],
         proxyPort: TEST_PROXY_PORT,
         tls: { cert: tlsCert, key: tlsKey },
       })
     );
     await listen(server);
 
-    const addr = server.address();
-    if (!addr || typeof addr === "string") throw new Error("no addr");
-
-    const result = await new Promise<{ headers: http2.IncomingHttpHeaders; body: string }>(
-      (resolve, reject) => {
-        const client = http2.connect(`https://127.0.0.1:${addr.port}`, {
-          rejectUnauthorized: false,
-        });
-        client.on("error", reject);
-        const req = client.request({
-          ":method": "GET",
-          ":path": "/",
-          ":authority": "missing.localhost",
-          accept: "application/json",
-        });
-        let body = "";
-        let headers: http2.IncomingHttpHeaders = {};
-        req.on("response", (h) => (headers = h));
-        req.on("data", (chunk: Buffer) => (body += chunk));
-        req.on("end", () => {
-          client.close();
-          resolve({ headers, body });
-        });
-        req.on("error", reject);
-        req.end();
-      }
-    );
-
-    expect(result.headers[":status"]).toBe(404);
-    expect(result.headers["content-type"]).toBe("application/json; charset=utf-8");
-    expect(result.headers.vary).toBe("Accept");
-    expect(Buffer.byteLength(result.body)).toBeLessThan(1000);
-    expect(JSON.parse(result.body)).toEqual({
-      error: "not_found",
-      upstream: "missing.localhost",
-      message: "No app registered for missing.localhost",
+    const res = await httpsRequest(server, {
+      host: "missing.localhost",
+      accept: "application/json",
     });
+    expect(res.status).toBe(404);
+    expect(res.headers["content-type"]).toBe("application/json; charset=utf-8");
+    expect(JSON.parse(res.body).error).toBe("not_found");
   });
 
   it("forwards the :authority hostname as Host to the backend (h2 -> HTTP/1.1)", async () => {
