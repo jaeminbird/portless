@@ -136,6 +136,13 @@ export function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Parse a port string, returning null unless it is a whole number from 1 to 65535. */
+export function parsePort(value: string): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const port = Number(value);
+  return port >= 1 && port <= 65535 ? port : null;
+}
+
 /**
  * Format a URL for the given hostname. Omits the port when it matches the
  * protocol default (80 for HTTP, 443 for HTTPS).
