@@ -396,6 +396,7 @@ describe("parsePort", () => {
     expect(parsePort("1")).toBe(1);
     expect(parsePort("8123")).toBe(8123);
     expect(parsePort("65535")).toBe(65535);
+    expect(parsePort(" 3000 ")).toBe(3000);
   });
 
   it("rejects out of range and malformed values", () => {
@@ -407,7 +408,8 @@ describe("parsePort", () => {
       "8123abc",
       "81.23",
       "1e3",
-      " 80",
+      "30 00",
+      "3000abc",
       "-1",
     ]) {
       expect(parsePort(value)).toBeNull();

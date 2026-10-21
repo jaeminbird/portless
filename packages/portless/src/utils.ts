@@ -138,8 +138,9 @@ export function escapeHtml(str: string): string {
 
 /** Parse a port string, returning null unless it is a whole number from 1 to 65535. */
 export function parsePort(value: string): number | null {
-  if (!/^\d+$/.test(value)) return null;
-  const port = Number(value);
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const port = Number(trimmed);
   return port >= 1 && port <= 65535 ? port : null;
 }
 
