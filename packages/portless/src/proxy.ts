@@ -396,6 +396,13 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
     if (!proxyReqHeaders.host) {
       proxyReqHeaders.host = getRequestHost(req);
     }
+    if (
+      req instanceof http2.Http2ServerRequest &&
+      !req.stream.endAfterHeaders &&
+      proxyReqHeaders["content-length"] === undefined
+    ) {
+      proxyReqHeaders["transfer-encoding"] = "chunked";
+    }
 
     const proxyReq = http.request(
       {

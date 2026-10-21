@@ -1735,6 +1735,60 @@ describe("createProxyServer with TLS (HTTP/2)", () => {
     expect(result.protocol).toBe("h2");
   });
 
+  it("frames h2 request bodies sent without content-length", async () => {
+    const received: { te?: string; body: string }[] = [];
+    const backend = trackServer(
+      http.createServer((req, res) => {
+        let body = "";
+        req.on("data", (chunk) => (body += chunk));
+        req.on("end", () => {
+          received.push({ te: req.headers["transfer-encoding"], body });
+          res.end("ok");
+        });
+      })
+    );
+    await listen(backend);
+    const backendAddr = backend.address();
+    if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+    const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: backendAddr.port }];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+    const addr = server.address();
+    if (!addr || typeof addr === "string") throw new Error("no addr");
+
+    const client = http2.connect(`https://127.0.0.1:${addr.port}`, { rejectUnauthorized: false });
+    const send = (method: string, body?: string) =>
+      new Promise<number>((resolve, reject) => {
+        const req = client.request(
+          { ":method": method, ":path": "/", ":authority": "myapp.localhost" },
+          { endStream: body === undefined }
+        );
+        req.on("response", (headers) => resolve(headers[":status"] as number));
+        req.on("error", reject);
+        req.resume();
+        if (body !== undefined) req.end(body);
+      });
+
+    try {
+      expect(await send("DELETE", '{"id":1}')).toBe(200);
+      expect(await send("GET")).toBe(200);
+    } finally {
+      client.close();
+    }
+
+    expect(received).toEqual([
+      { te: "chunked", body: '{"id":1}' },
+      { te: undefined, body: "" },
+    ]);
+  });
+
   it("forwards the :authority hostname as Host to the backend (h2 -> HTTP/1.1)", async () => {
     let receivedHost = "";
     const backend = trackServer(
