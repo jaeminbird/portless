@@ -3046,7 +3046,13 @@ async function handleProxy(args: string[]): Promise<void> {
     if (portIdx !== -1) {
       const portValue = args[portIdx + 1];
       if (portValue && !portValue.startsWith("-")) {
-        explicitPort = parsePort(portValue) ?? undefined;
+        const parsed = parsePort(portValue);
+        if (parsed === null) {
+          console.error(colors.red(`Error: Invalid port number: ${portValue}`));
+          console.error(colors.blue("Port must be between 1 and 65535."));
+          process.exit(1);
+        }
+        explicitPort = parsed;
       }
     }
 

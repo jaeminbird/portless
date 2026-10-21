@@ -1044,6 +1044,12 @@ describe("CLI", () => {
       }
     });
 
+    it("proxy stop exits 1 for a port with trailing text", () => {
+      const { status, stderr } = run(["proxy", "stop", "-p", "8123abc"]);
+      expect(status).toBe(1);
+      expect(stderr).toContain("Invalid port number: 8123abc");
+    });
+
     it("exits 1 when --remove has no name", () => {
       const { status, stderr } = run(["alias", "--remove"]);
       expect(status).toBe(1);
