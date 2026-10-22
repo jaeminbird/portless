@@ -136,7 +136,9 @@ describe("ensureCerts", () => {
     const result = ensureCerts(tmpDir);
     if (localOpensslBackdates) {
       expect(certAgeMs(result.caPath)).toBeGreaterThan(4 * 60 * 1000);
+      expect(certAgeMs(result.caPath)).toBeLessThan(6 * 60 * 1000);
       expect(certAgeMs(result.certPath)).toBeGreaterThan(4 * 60 * 1000);
+      expect(certAgeMs(result.certPath)).toBeLessThan(6 * 60 * 1000);
     } else {
       expect(certAgeMs(result.caPath)).toBeLessThan(60 * 1000);
       expect(certAgeMs(result.certPath)).toBeLessThan(60 * 1000);
@@ -429,6 +431,7 @@ describe("createSNICallback", () => {
     const hostCertPath = path.join(tmpDir, "host-certs", "skew_localhost.pem");
     if (localOpensslBackdates) {
       expect(certAgeMs(hostCertPath)).toBeGreaterThan(4 * 60 * 1000);
+      expect(certAgeMs(hostCertPath)).toBeLessThan(6 * 60 * 1000);
     } else {
       expect(certAgeMs(hostCertPath)).toBeLessThan(60 * 1000);
     }
