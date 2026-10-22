@@ -510,6 +510,17 @@ describe("createSNICallback", () => {
     expect(reissued.verify(newCa.publicKey)).toBe(true);
   });
 
+  it("refuses hostnames outside the configured TLDs without issuing a cert", async () => {
+    const sniCallback = createSNICallback(tmpDir, defaultCert, defaultKey);
+    for (const name of ["outside.example.com", "localhost.example.net", "evillocalhost"]) {
+      const error = await new Promise<Error | null>((resolve) => {
+        sniCallback(name, (err) => resolve(err));
+      });
+      expect(error).toBeInstanceOf(Error);
+    }
+    expect(fs.existsSync(path.join(tmpDir, "host-certs"))).toBe(false);
+  });
+
   it("returns error via callback when state dir is invalid", async () => {
     const badDir = path.join(tmpDir, "nonexistent");
     const sniCallback = createSNICallback(badDir, defaultCert, defaultKey);
