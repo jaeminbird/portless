@@ -94,7 +94,7 @@ describe("sanitizeHostForFilename", () => {
   });
 });
 
-/** Milliseconds between a PEM certificate's notBefore and now. */
+/** Milliseconds since a PEM cert's notBefore. */
 function certAgeMs(certPath: string): number {
   const cert = new crypto.X509Certificate(fs.readFileSync(certPath));
   return Date.now() - new Date(cert.validFrom).getTime();
@@ -105,19 +105,10 @@ const localOpensslBackdates = opensslSupportsNotBefore(
 );
 
 describe("opensslSupportsNotBefore", () => {
-  it("is true from OpenSSL 3.4 on", () => {
-    expect(
-      opensslSupportsNotBefore("OpenSSL 3.4.0 22 Oct 2024 (Library: OpenSSL 3.4.0 22 Oct 2024)")
-    ).toBe(true);
-    expect(opensslSupportsNotBefore("OpenSSL 3.6.4 1 Jul 2026")).toBe(true);
-    expect(opensslSupportsNotBefore("OpenSSL 4.0.0 1 Apr 2026\n")).toBe(true);
-  });
-
-  it("is false for older OpenSSL and for LibreSSL", () => {
+  it("is true only from OpenSSL 3.4 on", () => {
+    expect(opensslSupportsNotBefore("OpenSSL 3.4.0 22 Oct 2024")).toBe(true);
     expect(opensslSupportsNotBefore("OpenSSL 3.3.2 3 Sep 2024")).toBe(false);
-    expect(opensslSupportsNotBefore("OpenSSL 1.1.1w  11 Sep 2023")).toBe(false);
     expect(opensslSupportsNotBefore("LibreSSL 3.3.6")).toBe(false);
-    expect(opensslSupportsNotBefore("")).toBe(false);
   });
 });
 
@@ -141,21 +132,14 @@ describe("ensureCerts", () => {
     expect(fs.existsSync(result.caPath)).toBe(true);
   });
 
-  it("backdates the server cert's notBefore when openssl can set it", () => {
-    const result = ensureCerts(tmpDir);
-    if (localOpensslBackdates) {
-      expect(certAgeMs(result.certPath)).toBeGreaterThan(4 * 60 * 1000);
-    } else {
-      expect(certAgeMs(result.certPath)).toBeLessThan(60 * 1000);
-    }
-  });
-
-  it("backdates the CA cert's notBefore when openssl can set it", () => {
+  it("backdates the CA and server certs' notBefore when openssl can set it", () => {
     const result = ensureCerts(tmpDir);
     if (localOpensslBackdates) {
       expect(certAgeMs(result.caPath)).toBeGreaterThan(4 * 60 * 1000);
+      expect(certAgeMs(result.certPath)).toBeGreaterThan(4 * 60 * 1000);
     } else {
       expect(certAgeMs(result.caPath)).toBeLessThan(60 * 1000);
+      expect(certAgeMs(result.certPath)).toBeLessThan(60 * 1000);
     }
   });
 

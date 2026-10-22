@@ -275,18 +275,11 @@ function openssl(args: string[], options?: { input?: string }): string {
   }
 }
 
-/**
- * How far a signed certificate's notBefore is moved into the past, so a client
- * whose clock runs a little behind this machine still accepts a fresh cert.
- */
 const NOT_BEFORE_SKEW_MS = 5 * 60 * 1000;
 
 let notBeforeSupported: boolean | undefined;
 
-/**
- * Whether `openssl x509 -req` accepts `-not_before`, given `openssl version`
- * output. OpenSSL added it in 3.4; LibreSSL and older OpenSSL builds lack it.
- */
+/** Whether `openssl x509 -req` accepts `-not_before` for the given `openssl version` output. */
 export function opensslSupportsNotBefore(version: string): boolean {
   const match = /^OpenSSL (\d+)\.(\d+)/.exec(version.trim());
   if (!match) return false;
@@ -295,10 +288,7 @@ export function opensslSupportsNotBefore(version: string): boolean {
   return major > 3 || (major === 3 && minor >= 4);
 }
 
-/**
- * Arguments that backdate a signed certificate's notBefore by a few minutes,
- * or none when the local openssl cannot set it (today's behavior there).
- */
+/** `-not_before` args that backdate a signed cert, or none if unsupported. */
 function backdatedNotBeforeArgs(): string[] {
   if (notBeforeSupported === undefined) {
     try {
@@ -336,7 +326,7 @@ async function opensslAsync(args: string[]): Promise<string> {
   }
 }
 
-/** Async version of backdatedNotBeforeArgs that probes openssl without blocking. */
+/** Async version of backdatedNotBeforeArgs. */
 async function backdatedNotBeforeArgsAsync(): Promise<string[]> {
   if (notBeforeSupported === undefined) {
     try {
