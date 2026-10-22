@@ -885,7 +885,7 @@ export function createSNICallback(
     }
 
     const name = servername.toLowerCase();
-    if (!configuredTlds.some((tld) => name.endsWith(`.${tld}`))) {
+    if (!/^[a-z0-9.-]+$/.test(name) || !configuredTlds.some((tld) => name.endsWith(`.${tld}`))) {
       cb(new Error(`Refusing certificate for ${servername}: not under a configured TLD`));
       return;
     }

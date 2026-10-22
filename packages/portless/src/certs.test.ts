@@ -512,7 +512,12 @@ describe("createSNICallback", () => {
 
   it("refuses hostnames outside the configured TLDs without issuing a cert", async () => {
     const sniCallback = createSNICallback(tmpDir, defaultCert, defaultKey);
-    for (const name of ["outside.example.com", "localhost.example.net", "evillocalhost"]) {
+    for (const name of [
+      "outside.example.com",
+      "localhost.example.net",
+      "evillocalhost",
+      "outside.example.com,DNS:app.localhost",
+    ]) {
       const error = await new Promise<Error | null>((resolve) => {
         sniCallback(name, (err) => resolve(err));
       });
