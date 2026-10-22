@@ -336,6 +336,18 @@ async function opensslAsync(args: string[]): Promise<string> {
   }
 }
 
+/** Async version of backdatedNotBeforeArgs that probes openssl without blocking. */
+async function backdatedNotBeforeArgsAsync(): Promise<string[]> {
+  if (notBeforeSupported === undefined) {
+    try {
+      notBeforeSupported = opensslSupportsNotBefore(await opensslAsync(["version"]));
+    } catch {
+      notBeforeSupported = false;
+    }
+  }
+  return backdatedNotBeforeArgs();
+}
+
 // ---------------------------------------------------------------------------
 // CA generation
 // ---------------------------------------------------------------------------
@@ -855,7 +867,7 @@ async function generateHostCertAsync(
     srlPath,
     "-out",
     certPath,
-    ...backdatedNotBeforeArgs(),
+    ...(await backdatedNotBeforeArgsAsync()),
     "-days",
     SERVER_VALIDITY_DAYS.toString(),
     "-extfile",
