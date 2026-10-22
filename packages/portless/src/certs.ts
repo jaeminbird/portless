@@ -389,6 +389,7 @@ function generateCA(stateDir: string): { certPath: string; keyPath: string } {
       keyPath,
       "-out",
       certPath,
+      ...backdatedNotBeforeArgs(),
       "-days",
       CA_VALIDITY_DAYS.toString(),
       "-config",

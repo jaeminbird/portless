@@ -150,6 +150,15 @@ describe("ensureCerts", () => {
     }
   });
 
+  it("backdates the CA cert's notBefore when openssl can set it", () => {
+    const result = ensureCerts(tmpDir);
+    if (localOpensslBackdates) {
+      expect(certAgeMs(result.caPath)).toBeGreaterThan(4 * 60 * 1000);
+    } else {
+      expect(certAgeMs(result.caPath)).toBeLessThan(60 * 1000);
+    }
+  });
+
   it("returns valid PEM certificates", () => {
     const result = ensureCerts(tmpDir);
 
