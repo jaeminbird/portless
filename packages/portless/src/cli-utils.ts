@@ -1708,7 +1708,8 @@ type FrameworkInvocation = {
   basename: string;
   framework: FrameworkSpec;
   frameworkIndex: number;
-  frameworkArgs: string[];
+  /** Null when npm parses the options after the framework and one of them may consume the next argument. */
+  frameworkArgs: string[] | null;
   insertionIndex: number;
   separator?: string;
 };
@@ -1766,16 +1767,25 @@ function parseFrameworkInvocation(commandArgs: string[]): FrameworkInvocation | 
   const framework = FRAMEWORKS_NEEDING_PORT[basename];
   const optionEnd = commandArgs.indexOf("--", frameworkIndex + 1);
   const insertionIndex = needsSeparator || optionEnd === -1 ? commandArgs.length : optionEnd;
-  let frameworkArgs: string[];
+  let frameworkArgs: string[] | null;
   if (needsSeparator) {
     const beforeSeparator =
       optionEnd === -1
         ? commandArgs.slice(frameworkIndex + 1)
         : commandArgs.slice(frameworkIndex + 1, optionEnd);
-    frameworkArgs = [
-      ...beforeSeparator.filter((arg) => !arg.startsWith("-")),
-      ...(optionEnd === -1 ? [] : commandArgs.slice(optionEnd + 1)),
-    ];
+    const npmMayConsumeValue = beforeSeparator.some(
+      (arg, i) =>
+        arg.startsWith("-") &&
+        !arg.includes("=") &&
+        i + 1 < beforeSeparator.length &&
+        !beforeSeparator[i + 1].startsWith("-")
+    );
+    frameworkArgs = npmMayConsumeValue
+      ? null
+      : [
+          ...beforeSeparator.filter((arg) => !arg.startsWith("-")),
+          ...(optionEnd === -1 ? [] : commandArgs.slice(optionEnd + 1)),
+        ];
   } else {
     frameworkArgs = commandArgs.slice(frameworkIndex + 1, insertionIndex);
   }
@@ -1876,7 +1886,7 @@ export function injectFrameworkFlags(commandArgs: string[], port: number): strin
   if (!invocation) return [];
   const { basename, framework, frameworkArgs, insertionIndex, separator } = invocation;
 
-  if (!invokesFrameworkServer(frameworkArgs, framework)) return [];
+  if (!frameworkArgs || !invokesFrameworkServer(frameworkArgs, framework)) return [];
 
   const flags: string[] = [];
 

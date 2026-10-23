@@ -1130,6 +1130,12 @@ describe("injectFrameworkFlags", () => {
     ]);
   });
 
+  it("does not inject when npm may consume an option value for npm exec vite --loglevel info build", () => {
+    const args = ["npm", "exec", "vite", "--loglevel", "info", "build"];
+    expect(injectFrameworkFlags(args, 4567)).toEqual([]);
+    expect(args).toEqual(["npm", "exec", "vite", "--loglevel", "info", "build"]);
+  });
+
   it("injects flags for npx rsbuild dev", () => {
     const args = ["npx", "rsbuild", "dev"];
     injectFrameworkFlags(args, 4567);
