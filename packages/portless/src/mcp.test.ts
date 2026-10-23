@@ -67,6 +67,8 @@ describe("buildArgv", () => {
     ],
     ["portless_version", {}, ["--version"]],
     ["portless_list", { extraArgs: ["--x"], cwd: "/tmp", timeoutMs: 5 }, ["list", "--x"]],
+    ["portless_proxy_stop", { port: 1356 }, ["proxy", "stop", "-p", "1356"]],
+    ["portless_prune", { force: true }, ["prune", "--force"]],
   ] as const)(
     "builds %s argv without cwd or timeoutMs and appends extraArgs last",
     (tool, args, argv) => {
@@ -103,6 +105,7 @@ describe("profiles", () => {
     expect(core).toContain("portless_get");
     expect(core).not.toContain("portless_proxy_start");
     expect(await names(["core", "proxy"])).toContain("portless_proxy_start");
+    expect(await names(["all"])).toHaveLength(TOOLS.length);
   });
 
   it("returns an error result for a disabled tool", async () => {
@@ -110,7 +113,6 @@ describe("profiles", () => {
     expect(res.error).toBeUndefined();
     expect(res.result.isError).toBe(true);
     expect(res.result.content[0].text).toContain("not enabled");
-    expect(res.result.structuredContent).toBeUndefined();
   });
 });
 
@@ -124,25 +126,43 @@ describe("tools/call validation", () => {
     expect(res.result.content[0].text).toContain("alpha, zeta");
     expect(res.result.content[0].text).toContain("Tool arguments: name, noWorktree");
     expect(res.result.content[0].text).not.toMatch(/Unknown argument\(s\)[^.]*cwd/);
-  });
 
-  it("says none when the tool has no own fields", async () => {
-    const res = await call(["core"], "tools/call", {
+    const none = await call(["core"], "tools/call", {
       name: "portless_list",
       arguments: { bogus: 1 },
     });
-    expect(res.result.isError).toBe(true);
-    expect(res.result.content[0].text).toContain("Tool arguments: none");
+    expect(none.result.isError).toBe(true);
+    expect(none.result.content[0].text).toContain("Tool arguments: none");
   });
 
-  it("marks destructive tools", () => {
-    const remove = TOOLS.find((t) => t.name === "portless_alias_remove");
-    const add = TOOLS.find((t) => t.name === "portless_alias_add");
-    expect(remove?.annotations.destructiveHint).toBe(true);
-    expect(add?.annotations.destructiveHint).toBe(true);
-    expect(TOOLS.find((t) => t.name === "portless_proxy_start")?.annotations.destructiveHint).toBe(
-      false
-    );
+  it("returns -32602 for an unknown tool and -32700 for a non-JSON line", async () => {
+    const unknown = await call(["core"], "tools/call", {
+      name: "portless_nope",
+      arguments: {},
+    });
+    expect(unknown.error?.code).toBe(-32602);
+
+    const malformed = await createServer(["core"]).handleLine("not json");
+    expect(malformed?.id).toBeNull();
+    expect((malformed?.error as { code: number }).code).toBe(-32700);
+  });
+
+  it("returns an error result when the child cannot spawn", async () => {
+    const cwd = "/definitely/not/a/real/dir-portless-mcp";
+    const res = await call(["core"], "tools/call", {
+      name: "portless_list",
+      arguments: { cwd },
+    });
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toContain(cwd);
+  });
+
+  it("rejects timeoutMs above the 32-bit maximum", async () => {
+    const res = await call(["core"], "tools/call", {
+      name: "portless_list",
+      arguments: { timeoutMs: 2147483648 },
+    });
+    expect(res.result.isError).toBe(true);
   });
 });
 

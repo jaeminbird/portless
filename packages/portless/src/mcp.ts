@@ -36,6 +36,7 @@ const SHARED_PROPERTIES: Record<string, unknown> = {
   timeoutMs: {
     type: "integer",
     minimum: 1,
+    maximum: 2147483647,
     default: DEFAULT_TIMEOUT_MS,
     description: "Timeout in milliseconds.",
   },
@@ -155,7 +156,7 @@ export const TOOLS: ToolDef[] = [
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: false,
-      openWorldHint: true,
+      openWorldHint: false,
     }
   ),
   tool(
@@ -168,7 +169,7 @@ export const TOOLS: ToolDef[] = [
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: true,
-      openWorldHint: true,
+      openWorldHint: false,
     }
   ),
   tool(
@@ -188,7 +189,7 @@ export const TOOLS: ToolDef[] = [
   tool(
     "portless_proxy_start",
     "Start proxy",
-    "Start the shared portless proxy as a background daemon. Without port, HTTPS uses 443 which may need sudo; MCP cannot answer a sudo prompt, so pass port (for example 1355) for an unprivileged proxy.",
+    'Start the shared portless proxy as a background daemon. Without port, HTTPS uses 443 which may need sudo; MCP cannot answer a sudo prompt, so pass port (for example 1355) for an unprivileged proxy. HTTPS may show an OS dialog to trust the local CA; pass extraArgs ["--skip-trust"] to skip it.',
     {
       port: PORT_PROPERTY,
       noTls: { type: "boolean", description: "Serve plain HTTP instead of HTTPS." },
@@ -222,7 +223,7 @@ export const TOOLS: ToolDef[] = [
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: true,
-      openWorldHint: true,
+      openWorldHint: false,
     }
   ),
   tool(
@@ -382,12 +383,18 @@ function readStringArray(args: Record<string, unknown>, key: "extraArgs" | "tld"
 }
 
 function validateShared(args: Record<string, unknown>): string[] {
-  readString(args, "cwd", false);
+  const cwd = readString(args, "cwd", false);
+  if (cwd !== undefined && cwd.length === 0) fail("cwd must not be empty");
   const extraArgs = readStringArray(args, "extraArgs");
   const timeout = args.timeoutMs;
   if (timeout !== undefined && timeout !== null) {
-    if (typeof timeout !== "number" || !Number.isInteger(timeout) || timeout < 1) {
-      fail("timeoutMs must be a positive integer");
+    if (
+      typeof timeout !== "number" ||
+      !Number.isInteger(timeout) ||
+      timeout < 1 ||
+      timeout > 2147483647
+    ) {
+      fail("timeoutMs must be a positive integer up to 2147483647");
     }
   }
   return extraArgs;
@@ -483,8 +490,8 @@ function runChild(
   argv: string[],
   cwd: string,
   timeoutMs: number
-): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
+): Promise<{ exitCode: number | null; stdout: string; stderr: string } | { spawnError: string }> {
+  return new Promise((resolve) => {
     const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: "1" };
     delete env.FORCE_COLOR;
     delete env.PORTLESS;
@@ -527,7 +534,7 @@ function runChild(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(new McpError(-32603, `Failed to run portless: ${error.message}`));
+      resolve({ spawnError: error.message });
     });
     child.on("close", finish);
   });
@@ -595,11 +602,19 @@ export function createServer(profiles: string[]): {
           typeof requested === "string" && PROTOCOL_VERSIONS.includes(requested)
             ? requested
             : PROTOCOL_VERSIONS[0];
-        const instructions =
-          `Portless MCP server. Active profiles: ${profiles.join(", ")}. ` +
-          "Use portless_get to find an app's URL, portless_list to see active routes. " +
-          "Start dev servers with `portless run <cmd>` in a shell; MCP does not run them. " +
-          "Call portless_tools_profiles to see other tool profiles.";
+        const lookup: string[] = [];
+        if (enabled.has("portless_get")) lookup.push("portless_get to find an app's URL");
+        if (enabled.has("portless_list")) lookup.push("portless_list to see active routes");
+        const instructions = [
+          `Portless MCP server. Active profiles: ${profiles.join(", ")}.`,
+          lookup.length > 0 ? `Use ${lookup.join(", ")}.` : "",
+          "Start dev servers with `portless run <cmd>` in a shell; MCP does not run them.",
+          enabled.has("portless_tools_profiles")
+            ? "Call portless_tools_profiles to see other tool profiles."
+            : "",
+        ]
+          .filter((part) => part.length > 0)
+          .join(" ");
         return resultResponse(id, {
           protocolVersion: version,
           capabilities: { tools: {} },
@@ -694,6 +709,12 @@ export function createServer(profiles: string[]): {
           const timeoutMs =
             typeof args.timeoutMs === "number" ? args.timeoutMs : DEFAULT_TIMEOUT_MS;
           const run = await runChild(argv, cwd, timeoutMs);
+          if ("spawnError" in run) {
+            return resultResponse(
+              id,
+              toolErrorResult(`Failed to run portless in ${cwd}: ${run.spawnError}`)
+            );
+          }
           return resultResponse(id, toToolResult(run));
         } catch (error) {
           if (error instanceof McpError && error.code === -32602) {
