@@ -27,13 +27,13 @@ async function call(profiles: string[], method: string, params?: unknown) {
 }
 
 const MIN_ARGS: Record<string, Record<string, unknown>> = {
-  portless_get: { name: "backend" },
-  portless_alias_add: { name: "db", port: 5432 },
-  portless_alias_remove: { name: "db" },
+  get: { name: "backend" },
+  alias_add: { name: "db", port: 5432 },
+  alias_remove: { name: "db" },
 };
 
 describe("tool registry", () => {
-  it("has unique portless_ names, each in a non-all profile, and buildArgv covers them", () => {
+  it("has unique names, each in a non-all profile, and buildArgv covers them", () => {
     const names = TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     const inProfile = new Set<string>();
@@ -41,9 +41,8 @@ describe("tool registry", () => {
       if (name !== "all" && p.tools !== "all") p.tools.forEach((t) => inProfile.add(t));
     }
     for (const name of names) {
-      expect(name.startsWith("portless_")).toBe(true);
       expect(inProfile.has(name)).toBe(true);
-      if (name !== "portless_tools_profiles") {
+      if (name !== "tools_profiles") {
         expect(() => buildArgv(name, MIN_ARGS[name] ?? {})).not.toThrow();
       }
     }
@@ -52,23 +51,19 @@ describe("tool registry", () => {
 
 describe("buildArgv", () => {
   it.each([
-    ["portless_get", { name: "backend", noWorktree: true }, ["get", "backend", "--no-worktree"]],
-    ["portless_get", { name: "backend", noWorktree: false }, ["get", "backend"]],
+    ["get", { name: "backend", noWorktree: true }, ["get", "backend", "--no-worktree"]],
+    ["get", { name: "backend", noWorktree: false }, ["get", "backend"]],
+    ["alias_add", { name: "db", port: 5432, force: true }, ["alias", "db", "5432", "--force"]],
+    ["alias_remove", { name: "db" }, ["alias", "--remove", "db"]],
     [
-      "portless_alias_add",
-      { name: "db", port: 5432, force: true },
-      ["alias", "db", "5432", "--force"],
-    ],
-    ["portless_alias_remove", { name: "db" }, ["alias", "--remove", "db"]],
-    [
-      "portless_proxy_start",
+      "proxy_start",
       { port: 1355, noTls: true, tld: ["test", "localhost"] },
       ["proxy", "start", "-p", "1355", "--no-tls", "--tld", "test", "--tld", "localhost"],
     ],
-    ["portless_version", {}, ["--version"]],
-    ["portless_list", { extraArgs: ["--x"], cwd: "/tmp", timeoutMs: 5 }, ["list", "--x"]],
-    ["portless_proxy_stop", { port: 1356 }, ["proxy", "stop", "-p", "1356"]],
-    ["portless_prune", { force: true }, ["prune", "--force"]],
+    ["version", {}, ["--version"]],
+    ["list", { extraArgs: ["--x"], cwd: "/tmp", timeoutMs: 5 }, ["list", "--x"]],
+    ["proxy_stop", { port: 1356 }, ["proxy", "stop", "-p", "1356"]],
+    ["prune", { force: true }, ["prune", "--force"]],
   ] as const)(
     "builds %s argv without cwd or timeoutMs and appends extraArgs last",
     (tool, args, argv) => {
@@ -77,13 +72,13 @@ describe("buildArgv", () => {
   );
 
   it("rejects a flag-shaped name so it cannot become a CLI flag", () => {
-    expect(() => buildArgv("portless_alias_add", { name: "--remove", port: 5432 })).toThrow(
+    expect(() => buildArgv("alias_add", { name: "--remove", port: 5432 })).toThrow(
       expect.objectContaining({ code: -32602 })
     );
   });
 
   it("rejects --foreground for proxy start with -32602", () => {
-    expect(() => buildArgv("portless_proxy_start", { extraArgs: ["--foreground"] })).toThrow(
+    expect(() => buildArgv("proxy_start", { extraArgs: ["--foreground"] })).toThrow(
       expect.objectContaining({ code: -32602 })
     );
   });
@@ -102,14 +97,14 @@ describe("profiles", () => {
     const names = async (p: string[]) =>
       (await call(p, "tools/list")).result.tools.map((t: { name: string }) => t.name);
     const core = await names(["core"]);
-    expect(core).toContain("portless_get");
-    expect(core).not.toContain("portless_proxy_start");
-    expect(await names(["core", "proxy"])).toContain("portless_proxy_start");
+    expect(core).toContain("get");
+    expect(core).not.toContain("proxy_start");
+    expect(await names(["core", "proxy"])).toContain("proxy_start");
     expect(await names(["all"])).toHaveLength(TOOLS.length);
   });
 
   it("returns an error result for a disabled tool", async () => {
-    const res = await call(["core"], "tools/call", { name: "portless_proxy_start", arguments: {} });
+    const res = await call(["core"], "tools/call", { name: "proxy_start", arguments: {} });
     expect(res.error).toBeUndefined();
     expect(res.result.isError).toBe(true);
     expect(res.result.content[0].text).toContain("not enabled");
@@ -119,7 +114,7 @@ describe("profiles", () => {
 describe("tools/call validation", () => {
   it("names sorted unknown keys and only the tool's own fields", async () => {
     const res = await call(["core"], "tools/call", {
-      name: "portless_get",
+      name: "get",
       arguments: { zeta: 1, alpha: 2, cwd: "/tmp", timeoutMs: 5, name: "x" },
     });
     expect(res.result.isError).toBe(true);
@@ -128,7 +123,7 @@ describe("tools/call validation", () => {
     expect(res.result.content[0].text).not.toMatch(/Unknown argument\(s\)[^.]*cwd/);
 
     const none = await call(["core"], "tools/call", {
-      name: "portless_list",
+      name: "list",
       arguments: { bogus: 1 },
     });
     expect(none.result.isError).toBe(true);
@@ -137,7 +132,7 @@ describe("tools/call validation", () => {
 
   it("returns -32602 for an unknown tool and -32700 for a non-JSON line", async () => {
     const unknown = await call(["core"], "tools/call", {
-      name: "portless_nope",
+      name: "nope",
       arguments: {},
     });
     expect(unknown.error?.code).toBe(-32602);
@@ -150,7 +145,7 @@ describe("tools/call validation", () => {
   it("returns an error result when the child cannot spawn", async () => {
     const cwd = "/definitely/not/a/real/dir-portless-mcp";
     const res = await call(["core"], "tools/call", {
-      name: "portless_list",
+      name: "list",
       arguments: { cwd },
     });
     expect(res.result.isError).toBe(true);
@@ -159,7 +154,7 @@ describe("tools/call validation", () => {
 
   it("rejects timeoutMs above the 32-bit maximum", async () => {
     const res = await call(["core"], "tools/call", {
-      name: "portless_list",
+      name: "list",
       arguments: { timeoutMs: 2147483648 },
     });
     expect(res.result.isError).toBe(true);
@@ -230,13 +225,13 @@ describe("portless mcp end to end", () => {
           jsonrpc: "2.0",
           id: 2,
           method: "tools/call",
-          params: { name: "portless_get", arguments: { name: "backend", noWorktree: true } },
+          params: { name: "get", arguments: { name: "backend", noWorktree: true } },
         },
         {
           jsonrpc: "2.0",
           id: 3,
           method: "tools/call",
-          params: { name: "portless_get", arguments: { name: "backend", bogus: 1 } },
+          params: { name: "get", arguments: { name: "backend", bogus: 1 } },
         },
         { jsonrpc: "2.0", id: 4, method: "shutdown" },
       ];

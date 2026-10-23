@@ -107,7 +107,7 @@ const PORT_PROPERTY = {
 /** Every tool, in tools/list order. */
 export const TOOLS: ToolDef[] = [
   tool(
-    "portless_list",
+    "list",
     "List routes",
     "List active routes with their URLs, ports, PIDs, and uptime.",
     {},
@@ -120,7 +120,7 @@ export const TOOLS: ToolDef[] = [
     }
   ),
   tool(
-    "portless_get",
+    "get",
     "Get app URL",
     "Print the URL for an app name, using the same hostname and worktree logic as portless run. The app does not need to be running.",
     {
@@ -139,7 +139,7 @@ export const TOOLS: ToolDef[] = [
     }
   ),
   tool(
-    "portless_alias_add",
+    "alias_add",
     "Add alias",
     "Register a static route for a service portless does not run, such as a database.",
     {
@@ -160,7 +160,7 @@ export const TOOLS: ToolDef[] = [
     }
   ),
   tool(
-    "portless_alias_remove",
+    "alias_remove",
     "Remove alias",
     "Remove a static route registered with alias add.",
     { name: NAME_PROPERTY },
@@ -173,7 +173,7 @@ export const TOOLS: ToolDef[] = [
     }
   ),
   tool(
-    "portless_tools_profiles",
+    "tools_profiles",
     "Show tool profiles",
     "Show the active tool profiles and other profiles you can enable.",
     {},
@@ -187,7 +187,7 @@ export const TOOLS: ToolDef[] = [
     true
   ),
   tool(
-    "portless_proxy_start",
+    "proxy_start",
     "Start proxy",
     'Start the shared portless proxy as a background daemon. Without port, HTTPS uses 443 which may need sudo; MCP cannot answer a sudo prompt, so pass port (for example 1355) for an unprivileged proxy. HTTPS may show an OS dialog to trust the local CA; pass extraArgs ["--skip-trust"] to skip it.',
     {
@@ -214,7 +214,7 @@ export const TOOLS: ToolDef[] = [
     }
   ),
   tool(
-    "portless_proxy_stop",
+    "proxy_stop",
     "Stop proxy",
     "Stop the shared portless proxy. Pass port when the proxy runs on a non-default port.",
     { port: PORT_PROPERTY },
@@ -227,7 +227,7 @@ export const TOOLS: ToolDef[] = [
     }
   ),
   tool(
-    "portless_doctor",
+    "doctor",
     "Run doctor",
     "Check local portless health, including the proxy, certificates, and routes.",
     {},
@@ -240,7 +240,7 @@ export const TOOLS: ToolDef[] = [
     }
   ),
   tool(
-    "portless_prune",
+    "prune",
     "Prune servers",
     "Kill orphaned dev servers left by crashed sessions.",
     {
@@ -257,7 +257,7 @@ export const TOOLS: ToolDef[] = [
       openWorldHint: false,
     }
   ),
-  tool("portless_version", "Print version", "Print the portless version.", {}, [], {
+  tool("version", "Print version", "Print the portless version.", {}, [], {
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: true,
@@ -269,21 +269,15 @@ export const TOOLS: ToolDef[] = [
 export const PROFILES: Record<string, { description: string; tools: string[] | "all" }> = {
   core: {
     description: "Everyday route lookup and static aliases.",
-    tools: [
-      "portless_list",
-      "portless_get",
-      "portless_alias_add",
-      "portless_alias_remove",
-      "portless_tools_profiles",
-    ],
+    tools: ["list", "get", "alias_add", "alias_remove", "tools_profiles"],
   },
   proxy: {
     description: "Start and stop the shared portless proxy.",
-    tools: ["portless_proxy_start", "portless_proxy_stop"],
+    tools: ["proxy_start", "proxy_stop"],
   },
   diagnostics: {
     description: "Health checks, cleanup, and version information.",
-    tools: ["portless_doctor", "portless_prune", "portless_version"],
+    tools: ["doctor", "prune", "version"],
   },
   all: {
     description: "Every available tool.",
@@ -406,30 +400,30 @@ export function buildArgv(toolName: string, args: Record<string, unknown>): stri
   const argv: string[] = [];
 
   switch (toolName) {
-    case "portless_list":
+    case "list":
       argv.push("list");
       break;
-    case "portless_get": {
+    case "get": {
       const name = readRequiredName(args, "name");
       argv.push("get", name);
       if (readBoolean(args, "noWorktree") === true) argv.push("--no-worktree");
       break;
     }
-    case "portless_alias_add": {
+    case "alias_add": {
       const name = readRequiredName(args, "name");
       const port = readPort(args, "port", true);
       argv.push("alias", name, String(port));
       if (readBoolean(args, "force") === true) argv.push("--force");
       break;
     }
-    case "portless_alias_remove": {
+    case "alias_remove": {
       const name = readRequiredName(args, "name");
       argv.push("alias", "--remove", name);
       break;
     }
-    case "portless_tools_profiles":
+    case "tools_profiles":
       break;
-    case "portless_proxy_start": {
+    case "proxy_start": {
       const port = readPort(args, "port", false);
       if (extraArgs.includes("--foreground")) {
         fail(
@@ -444,20 +438,20 @@ export function buildArgv(toolName: string, args: Record<string, unknown>): stri
       if (readBoolean(args, "wildcard") === true) argv.push("--wildcard");
       break;
     }
-    case "portless_proxy_stop": {
+    case "proxy_stop": {
       const port = readPort(args, "port", false);
       argv.push("proxy", "stop");
       if (port !== undefined) argv.push("-p", String(port));
       break;
     }
-    case "portless_doctor":
+    case "doctor":
       argv.push("doctor");
       break;
-    case "portless_prune":
+    case "prune":
       argv.push("prune");
       if (readBoolean(args, "force") === true) argv.push("--force");
       break;
-    case "portless_version":
+    case "version":
       argv.push("--version");
       break;
     default:
@@ -603,14 +597,14 @@ export function createServer(profiles: string[]): {
             ? requested
             : PROTOCOL_VERSIONS[0];
         const lookup: string[] = [];
-        if (enabled.has("portless_get")) lookup.push("portless_get to find an app's URL");
-        if (enabled.has("portless_list")) lookup.push("portless_list to see active routes");
+        if (enabled.has("get")) lookup.push("the get tool to find an app's URL");
+        if (enabled.has("list")) lookup.push("the list tool to see active routes");
         const instructions = [
           `Portless MCP server. Active profiles: ${profiles.join(", ")}.`,
           lookup.length > 0 ? `Use ${lookup.join(", ")}.` : "",
           "Start dev servers with `portless run <cmd>` in a shell; MCP does not run them.",
-          enabled.has("portless_tools_profiles")
-            ? "Call portless_tools_profiles to see other tool profiles."
+          enabled.has("tools_profiles")
+            ? "Call the tools_profiles tool to see other tool profiles."
             : "",
         ]
           .filter((part) => part.length > 0)
@@ -684,7 +678,7 @@ export function createServer(profiles: string[]): {
         }
 
         try {
-          if (toolName === "portless_tools_profiles") {
+          if (toolName === "tools_profiles") {
             const summaries = Object.entries(PROFILES).map(([name, profile]) => ({
               name,
               description: profile.description,
@@ -770,10 +764,10 @@ export function printMcpHelp(): void {
       ),
       "",
       "Common tools:",
-      "  portless_list            List active routes.",
-      "  portless_get             Print an app URL.",
-      "  portless_alias_add       Register a static route.",
-      "  portless_tools_profiles  Show active and available profiles.",
+      "  list            List active routes.",
+      "  get             Print an app URL.",
+      "  alias_add       Register a static route.",
+      "  tools_profiles  Show active and available profiles.",
       "",
       "Pass --tools with a comma separated list of profiles. The default is core.",
       "Aliases: default = core, full = all. Use the extraArgs argument on any tool",
