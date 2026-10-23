@@ -96,10 +96,12 @@ describe("profiles", () => {
     expect(await names(["core", "proxy"])).toContain("portless_proxy_start");
   });
 
-  it("rejects a call to a disabled tool with -32602", async () => {
+  it("returns an error result for a disabled tool", async () => {
     const res = await call(["core"], "tools/call", { name: "portless_proxy_start", arguments: {} });
-    expect(res.error?.code).toBe(-32602);
-    expect(res.error?.message).toContain("not enabled");
+    expect(res.error).toBeUndefined();
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toContain("not enabled");
+    expect(res.result.structuredContent).toBeUndefined();
   });
 });
 
@@ -109,10 +111,10 @@ describe("tools/call validation", () => {
       name: "portless_get",
       arguments: { zeta: 1, alpha: 2, cwd: "/tmp", timeoutMs: 5, name: "x" },
     });
-    expect(res.error?.code).toBe(-32602);
-    expect(res.error?.message).toContain("alpha, zeta");
-    expect(res.error?.message).toContain("Tool arguments: name, noWorktree");
-    expect(res.error?.message).not.toMatch(/Unknown argument\(s\)[^.]*cwd/);
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toContain("alpha, zeta");
+    expect(res.result.content[0].text).toContain("Tool arguments: name, noWorktree");
+    expect(res.result.content[0].text).not.toMatch(/Unknown argument\(s\)[^.]*cwd/);
   });
 
   it("says none when the tool has no own fields", async () => {
@@ -120,7 +122,15 @@ describe("tools/call validation", () => {
       name: "portless_list",
       arguments: { bogus: 1 },
     });
-    expect(res.error?.message).toContain("Tool arguments: none");
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toContain("Tool arguments: none");
+  });
+
+  it("marks destructive tools", () => {
+    const remove = TOOLS.find((t) => t.name === "portless_alias_remove");
+    const add = TOOLS.find((t) => t.name === "portless_alias_add");
+    expect(remove?.annotations.destructiveHint).toBe(true);
+    expect(add?.annotations.destructiveHint).toBe(false);
   });
 });
 
@@ -223,8 +233,9 @@ describe("portless mcp end to end", () => {
         .map((l) => JSON.parse(l));
       expect(responses.map((r) => r.id)).toEqual([1, 2, 3, 4]);
       expect(responses[1].result.content[0].text).toBe(expected);
-      expect(responses[2].error.code).toBe(-32602);
-      expect(responses[2].error.message).toContain("bogus");
+      expect(responses[2].error).toBeUndefined();
+      expect(responses[2].result.isError).toBe(true);
+      expect(responses[2].result.content[0].text).toContain("bogus");
       expect(out.code).toBe(0);
     } finally {
       fs.rmSync(stateDir, { recursive: true, force: true });

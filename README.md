@@ -501,7 +501,7 @@ Starts a stdio MCP server that exchanges line-delimited JSON-RPC messages over s
 - `diagnostics`: `portless_doctor`, `portless_prune`, `portless_version`
 - `all`: every tool in the profiles above
 
-All tools except `portless_tools_profiles` accept shared `cwd`, `extraArgs`, and `timeoutMs` arguments. `cwd` defaults to the server's working directory, `extraArgs` are appended after the tool's typed arguments, and `timeoutMs` defaults to 120000. Unknown tool arguments are rejected with MCP error `-32602`, which lists that tool's own arguments.
+All tools except `portless_tools_profiles` accept shared `cwd`, `extraArgs`, and `timeoutMs` arguments. `cwd` defaults to the server's working directory, `extraArgs` are appended after the tool's typed arguments, and `timeoutMs` defaults to 120000. Bad arguments (unknown or wrong type) and calls to a tool that is not enabled return a tool result with `isError: true` that explains the fix, so the model can correct its call; unknown arguments list the tool's own arguments.
 
 The server does not expose dev-server launch commands: `portless run`, `portless <name> <cmd>`, `portless --name <name> <cmd>`, and zero-argument mode start foreground dev servers, and MCP has no detached form. `portless proxy start --foreground` blocks. `portless trust`, `portless clean`, `portless hosts sync`, `portless hosts clean`, and `portless service` may prompt for sudo and require a TTY. `portless mcp` and `portless mcp --help` are omitted because they are the server itself and human help.
 

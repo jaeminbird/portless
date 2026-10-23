@@ -63,7 +63,12 @@ export interface ToolDef {
     required?: string[];
     additionalProperties: false;
   };
-  annotations: { readOnlyHint: boolean; openWorldHint: boolean };
+  annotations: {
+    readOnlyHint: boolean;
+    destructiveHint: boolean;
+    idempotentHint: boolean;
+    openWorldHint: boolean;
+  };
 }
 
 interface ToolMeta {
@@ -81,6 +86,7 @@ function tool(
   description: string,
   properties: Record<string, unknown>,
   required: string[],
+  annotations: ToolDef["annotations"],
   profileless = false
 ): ToolDef {
   const inputSchema: ToolDef["inputSchema"] = {
@@ -94,10 +100,7 @@ function tool(
     title,
     description,
     inputSchema,
-    annotations: {
-      readOnlyHint: profileless ? true : false,
-      openWorldHint: false,
-    },
+    annotations,
   };
   TOOL_META.push({
     def,
@@ -109,7 +112,6 @@ function tool(
 }
 
 const NAME_PROPERTY = { type: "string", description: "App or alias name." };
-const FORCE_PROPERTY = { type: "boolean", description: "Skip confirmation prompts." };
 const PORT_PROPERTY = {
   type: "integer",
   minimum: 1,
@@ -119,120 +121,162 @@ const PORT_PROPERTY = {
 
 /** Every tool, in tools/list order. */
 export const TOOLS: ToolDef[] = [
-  (() => {
-    const def = tool(
-      "portless_list",
-      "List routes",
-      "List active routes with their URLs, ports, PIDs, and uptime.",
-      {},
-      []
-    );
-    def.annotations.readOnlyHint = true;
-    return def;
-  })(),
-  (() => {
-    const def = tool(
-      "portless_get",
-      "Get app URL",
-      "Print the URL for a registered app. Use noWorktree when the caller is not inside the app's worktree.",
-      {
-        name: NAME_PROPERTY,
-        noWorktree: {
-          type: "boolean",
-          description: "Ignore the current worktree prefix when looking up the name.",
-        },
+  tool(
+    "portless_list",
+    "List routes",
+    "List active routes with their URLs, ports, PIDs, and uptime.",
+    {},
+    [],
+    {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    }
+  ),
+  tool(
+    "portless_get",
+    "Get app URL",
+    "Print the URL for an app name, using the same hostname and worktree logic as portless run. The app does not need to be running.",
+    {
+      name: NAME_PROPERTY,
+      noWorktree: {
+        type: "boolean",
+        description: "Skip worktree prefix detection.",
       },
-      ["name"]
-    );
-    def.annotations.readOnlyHint = true;
-    return def;
-  })(),
-  (() => {
-    const def = tool(
-      "portless_alias_add",
-      "Add alias",
-      "Register a static route for a service portless does not run, such as a database.",
-      { name: NAME_PROPERTY, port: PORT_PROPERTY, force: FORCE_PROPERTY },
-      ["name", "port"]
-    );
-    def.annotations.openWorldHint = true;
-    return def;
-  })(),
-  (() => {
-    const def = tool(
-      "portless_alias_remove",
-      "Remove alias",
-      "Remove a static route registered with alias add.",
-      { name: NAME_PROPERTY },
-      ["name"]
-    );
-    def.annotations.openWorldHint = true;
-    return def;
-  })(),
+    },
+    ["name"],
+    {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    }
+  ),
+  tool(
+    "portless_alias_add",
+    "Add alias",
+    "Register a static route for a service portless does not run, such as a database.",
+    {
+      name: NAME_PROPERTY,
+      port: PORT_PROPERTY,
+      force: {
+        type: "boolean",
+        description: "Replace an existing route with the same name.",
+      },
+    },
+    ["name", "port"],
+    {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    }
+  ),
+  tool(
+    "portless_alias_remove",
+    "Remove alias",
+    "Remove a static route registered with alias add.",
+    { name: NAME_PROPERTY },
+    ["name"],
+    {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    }
+  ),
   tool(
     "portless_tools_profiles",
     "Show tool profiles",
     "Show the active tool profiles and other profiles you can enable.",
     {},
     [],
+    {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
     true
   ),
-  (() => {
-    const def = tool(
-      "portless_proxy_start",
-      "Start proxy",
-      "Start the shared portless proxy as a background daemon. Without port, HTTPS uses 443 which may need sudo; MCP cannot answer a sudo prompt, so pass port (for example 1355) for an unprivileged proxy.",
-      {
-        port: PORT_PROPERTY,
-        noTls: { type: "boolean", description: "Serve plain HTTP instead of HTTPS." },
-        lan: { type: "boolean", description: "Expose the proxy on the local network." },
-        tld: {
-          type: "array",
-          items: { type: "string" },
-          minItems: 1,
-          description: "One or more TLDs to serve.",
-        },
-        wildcard: { type: "boolean", description: "Enable wildcard DNS handling." },
+  tool(
+    "portless_proxy_start",
+    "Start proxy",
+    "Start the shared portless proxy as a background daemon. Without port, HTTPS uses 443 which may need sudo; MCP cannot answer a sudo prompt, so pass port (for example 1355) for an unprivileged proxy.",
+    {
+      port: PORT_PROPERTY,
+      noTls: { type: "boolean", description: "Serve plain HTTP instead of HTTPS." },
+      lan: { type: "boolean", description: "Expose the proxy on the local network." },
+      tld: {
+        type: "array",
+        items: { type: "string" },
+        minItems: 1,
+        description: "One or more TLDs to serve.",
       },
-      []
-    );
-    def.annotations.openWorldHint = true;
-    return def;
-  })(),
-  (() => {
-    const def = tool(
-      "portless_proxy_stop",
-      "Stop proxy",
-      "Stop the shared portless proxy. Pass port when the proxy runs on a non-default port.",
-      { port: PORT_PROPERTY },
-      []
-    );
-    def.annotations.openWorldHint = true;
-    return def;
-  })(),
-  (() => {
-    const def = tool(
-      "portless_doctor",
-      "Run doctor",
-      "Check local portless health, including the proxy, certificates, and routes.",
-      {},
-      []
-    );
-    def.annotations.readOnlyHint = true;
-    return def;
-  })(),
+      wildcard: {
+        type: "boolean",
+        description: "Allow unregistered subdomains to fall back to their parent route.",
+      },
+    },
+    [],
+    {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    }
+  ),
+  tool(
+    "portless_proxy_stop",
+    "Stop proxy",
+    "Stop the shared portless proxy. Pass port when the proxy runs on a non-default port.",
+    { port: PORT_PROPERTY },
+    [],
+    {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    }
+  ),
+  tool(
+    "portless_doctor",
+    "Run doctor",
+    "Check local portless health, including the proxy, certificates, and routes.",
+    {},
+    [],
+    {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    }
+  ),
   tool(
     "portless_prune",
     "Prune servers",
     "Kill orphaned dev servers left by crashed sessions.",
-    { force: FORCE_PROPERTY },
-    []
+    {
+      force: {
+        type: "boolean",
+        description: "Send SIGKILL instead of SIGTERM.",
+      },
+    },
+    [],
+    {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    }
   ),
-  (() => {
-    const def = tool("portless_version", "Print version", "Print the portless version.", {}, []);
-    def.annotations.readOnlyHint = true;
-    return def;
-  })(),
+  tool("portless_version", "Print version", "Print the portless version.", {}, [], {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  }),
 ];
 
 /** Profile name -> description and tool names. `all` has tools: "all". Aliases are not keys here. */
@@ -520,6 +564,13 @@ function runChild(
   });
 }
 
+function toolErrorResult(message: string): {
+  content: { type: "text"; text: string }[];
+  isError: true;
+} {
+  return { content: [{ type: "text", text: message }], isError: true };
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -532,12 +583,29 @@ function resultResponse(id: unknown, result: Record<string, unknown>): Record<st
   return { jsonrpc: "2.0", id, result };
 }
 
+function profileSummaries(): {
+  name: string;
+  description: string;
+  toolCount: number;
+  usage: string;
+}[] {
+  return Object.keys(PROFILES).map((name) => {
+    const profile = PROFILES[name];
+    return {
+      name,
+      description: profile.description,
+      toolCount: profile.tools === "all" ? TOOLS.length : profile.tools.length,
+      usage: `portless mcp --tools ${name}`,
+    };
+  });
+}
+
 function profilesText(profiles: string[]): string {
   const lines = [`Active profiles: ${profiles.join(", ")}`];
-  for (const name of Object.keys(PROFILES)) {
-    const profile = PROFILES[name];
-    const count = profile.tools === "all" ? TOOLS.length : profile.tools.length;
-    lines.push(`${name}: ${profile.description} (${count} tools), portless mcp --tools ${name}`);
+  for (const profile of profileSummaries()) {
+    lines.push(
+      `${profile.name}: ${profile.description} (${profile.toolCount} tools), ${profile.usage}`
+    );
   }
   return lines.join("\n");
 }
@@ -636,10 +704,11 @@ export function createServer(profiles: string[]): {
         const meta = metaFor(toolName);
         if (!meta) return errorResponse(id, -32602, `Unknown tool: ${toolName}`);
         if (!enabled.has(toolName)) {
-          return errorResponse(
+          return resultResponse(
             id,
-            -32602,
-            `Tool ${toolName} is not enabled. Restart with portless mcp --tools all or add a profile that includes it.`
+            toolErrorResult(
+              `Tool ${toolName} is not enabled. Restart with portless mcp --tools all or add a profile that includes it.`
+            )
           );
         }
 
@@ -649,10 +718,11 @@ export function createServer(profiles: string[]): {
           .sort();
         if (unknown.length > 0) {
           const own = meta.own.length > 0 ? meta.own.join(", ") : "none";
-          return errorResponse(
+          return resultResponse(
             id,
-            -32602,
-            `Unknown argument(s) for ${toolName}: ${unknown.join(", ")}. Tool arguments: ${own}.`
+            toolErrorResult(
+              `Unknown argument(s) for ${toolName}: ${unknown.join(", ")}. Tool arguments: ${own}.`
+            )
           );
         }
 
@@ -661,7 +731,7 @@ export function createServer(profiles: string[]): {
             const text = profilesText(profiles);
             return resultResponse(id, {
               content: [{ type: "text", text }],
-              structuredContent: { text },
+              structuredContent: { activeProfiles: profiles, profiles: profileSummaries() },
               isError: false,
             });
           }
@@ -672,6 +742,9 @@ export function createServer(profiles: string[]): {
           const run = await runChild(argv, cwd, timeoutMs);
           return resultResponse(id, toToolResult(run));
         } catch (error) {
+          if (error instanceof McpError && error.code === -32602) {
+            return resultResponse(id, toolErrorResult(error.message));
+          }
           if (error instanceof McpError) {
             return errorResponse(id, error.code, error.message);
           }
