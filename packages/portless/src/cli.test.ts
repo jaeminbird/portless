@@ -1224,6 +1224,8 @@ describe("CLI", () => {
         env: {
           PORTLESS: "0",
           PORTLESS_STATE_DIR: tmpDir,
+          HOME: tmpDir,
+          USERPROFILE: tmpDir,
         },
       });
       fs.rmSync(tmpDir, { recursive: true, force: true });
