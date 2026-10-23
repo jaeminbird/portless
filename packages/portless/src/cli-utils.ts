@@ -1691,6 +1691,7 @@ const PACKAGE_RUNNERS: Record<string, PackageRunnerSpec> = {
   pnpx: { subcommands: [], valueFlags: ["-p", "--package"] },
   yarn: { subcommands: ["dlx", "exec"] },
   pnpm: { subcommands: ["dlx", "exec"] },
+  npm: { subcommands: ["exec"] },
 };
 
 /**
