@@ -198,6 +198,100 @@ describe("toToolResult", () => {
   });
 });
 
+/** Every command in `portless --help` maps to an MCP tool or a deliberate omission. */
+const CLI_COMMANDS: Record<string, string | { omitted: string }> = {
+  "": { omitted: "zero-arg and named mode run foreground dev servers" },
+  run: { omitted: "runs a foreground dev server" },
+  "proxy start": "proxy_start",
+  "proxy stop": "proxy_stop",
+  mcp: { omitted: "the MCP server itself" },
+  "service install": { omitted: "may prompt for sudo" },
+  get: "get",
+  alias: "alias_add",
+  "alias --remove": "alias_remove",
+  list: "list",
+  doctor: "doctor",
+  trust: { omitted: "may prompt for sudo" },
+  clean: { omitted: "may prompt for sudo" },
+  prune: "prune",
+  "hosts sync": { omitted: "may prompt for sudo" },
+  "hosts clean": { omitted: "may prompt for sudo" },
+};
+
+/** Per tool: which `--help` lines describe it, and the flags it types or deliberately rejects. */
+const CLI_FLAGS: Record<
+  string,
+  { help: string; prefix: string; options?: boolean; known: string[] }
+> = {
+  get: { help: "get", prefix: "portless get", options: true, known: ["--no-worktree"] },
+  alias_add: { help: "alias", prefix: "portless alias <", known: ["--force"] },
+  alias_remove: { help: "alias", prefix: "portless alias --remove", known: ["--remove"] },
+  proxy_start: {
+    help: "proxy",
+    prefix: "portless proxy start",
+    known: ["-p", "--no-tls", "--lan", "--tld", "--wildcard", "--foreground"],
+  },
+  proxy_stop: { help: "proxy", prefix: "portless proxy stop", known: [] },
+  doctor: { help: "doctor", prefix: "portless doctor", options: true, known: [] },
+  prune: { help: "prune", prefix: "portless prune", options: true, known: ["--force"] },
+};
+
+function cliHelp(...args: string[]): string[] {
+  const env: Record<string, string | undefined> = { ...process.env, NO_COLOR: "1" };
+  delete env.PNPM_SCRIPT_SRC_DIR;
+  if (env.npm_command === "exec") delete env.npm_command;
+  const res = spawnSync(process.execPath, [CLI_PATH, ...args, "--help"], {
+    encoding: "utf-8",
+    timeout: 10_000,
+    env,
+  });
+  return res.stdout.split("\n").map((line) => line.trim());
+}
+
+describe("CLI coverage", () => {
+  it("maps every command in portless --help to a tool or an omission", () => {
+    const usage = cliHelp();
+    const start = usage.indexOf("Usage:");
+    const commands = new Set<string>();
+    for (const line of usage.slice(start + 1, usage.indexOf("", start))) {
+      const words: string[] = [];
+      for (const word of line.split(/\s+/).slice(1)) {
+        if (!/^(--)?[a-z][a-z-]*$/.test(word)) break;
+        words.push(word);
+      }
+      commands.add(words.join(" "));
+    }
+    for (const command of commands) {
+      expect(
+        CLI_COMMANDS[command],
+        `"portless ${command}" is in --help but has no MCP tool. Add one in mcp.ts or list it as omitted.`
+      ).toBeDefined();
+    }
+    const names = new Set(TOOLS.map((t) => t.name));
+    for (const target of Object.values(CLI_COMMANDS)) {
+      if (typeof target === "string") expect(names.has(target)).toBe(true);
+    }
+  });
+
+  it("types or deliberately rejects every flag a tool's --help lists", () => {
+    for (const [tool, { help, prefix, options, known }] of Object.entries(CLI_FLAGS)) {
+      const lines = cliHelp(help).filter(
+        (line) => line.startsWith(prefix) || (options === true && line.startsWith("-"))
+      );
+      const flags = new Set(
+        lines.flatMap((line) => line.match(/(?<=^|\s)(-p|--[a-z][a-z-]*)\b/g) ?? [])
+      );
+      flags.delete("--help");
+      for (const flag of flags) {
+        expect(
+          known,
+          `"${flag}" is in "portless ${help} --help" but the ${tool} tool does not handle it. Type it in mcp.ts or reject it.`
+        ).toContain(flag);
+      }
+    }
+  });
+});
+
 describe("portless mcp end to end", () => {
   it("answers over stdio and matches the CLI output", async () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "portless-mcp-"));
