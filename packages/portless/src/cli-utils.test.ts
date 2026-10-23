@@ -1014,10 +1014,86 @@ describe("injectFrameworkFlags", () => {
     expect(args).toEqual(["pnpm", "exec", "astro", "dev", "--port", "4567", "--host", "127.0.0.1"]);
   });
 
-  it("injects flags for npm exec astro dev", () => {
+  it("injects flags for npm exec astro dev with a separator", () => {
     const args = ["npm", "exec", "astro", "dev"];
     injectFrameworkFlags(args, 4567);
-    expect(args).toEqual(["npm", "exec", "astro", "dev", "--port", "4567", "--host", "127.0.0.1"]);
+    expect(args).toEqual([
+      "npm",
+      "exec",
+      "astro",
+      "dev",
+      "--",
+      "--port",
+      "4567",
+      "--host",
+      "127.0.0.1",
+    ]);
+  });
+
+  it("injects flags for npm exec -- astro dev without an extra separator", () => {
+    const args = ["npm", "exec", "--", "astro", "dev"];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([
+      "npm",
+      "exec",
+      "--",
+      "astro",
+      "dev",
+      "--port",
+      "4567",
+      "--host",
+      "127.0.0.1",
+    ]);
+  });
+
+  it("injects flags for npm x astro dev with a separator", () => {
+    const args = ["npm", "x", "astro", "dev"];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([
+      "npm",
+      "x",
+      "astro",
+      "dev",
+      "--",
+      "--port",
+      "4567",
+      "--host",
+      "127.0.0.1",
+    ]);
+  });
+
+  it("injects flags for npm exec -p astro -- astro dev", () => {
+    const args = ["npm", "exec", "-p", "astro", "--", "astro", "dev"];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([
+      "npm",
+      "exec",
+      "-p",
+      "astro",
+      "--",
+      "astro",
+      "dev",
+      "--port",
+      "4567",
+      "--host",
+      "127.0.0.1",
+    ]);
+  });
+
+  it("appends only missing flags after a separator for npm exec astro dev -- --port 3000", () => {
+    const args = ["npm", "exec", "astro", "dev", "--", "--port", "3000"];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([
+      "npm",
+      "exec",
+      "astro",
+      "dev",
+      "--",
+      "--port",
+      "3000",
+      "--host",
+      "127.0.0.1",
+    ]);
   });
 
   it("injects flags for npx rsbuild dev", () => {
