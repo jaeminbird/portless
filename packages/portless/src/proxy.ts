@@ -382,11 +382,14 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
       );
       const isIpAddress = net.isIPv4(host) || rawHost.startsWith("[");
       if (!isPortlessName && !isIpAddress) {
-        res.writeHead(421, {
-          "Content-Type": "text/plain",
-          "X-Content-Type-Options": "nosniff",
-        });
-        res.end(`DNS sent ${host} to this computer. This is not the real site.\n`);
+        const message = `DNS sent ${host} to this computer. This is not the real site.`;
+        sendProxyError(req, res, 421, "misdirected_request", message, host, () =>
+          renderPage(
+            421,
+            "Misdirected Request",
+            `<div class="content"><p class="desc">${escapeHtml(message)}</p></div>`
+          )
+        );
         return;
       }
 

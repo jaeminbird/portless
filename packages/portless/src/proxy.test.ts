@@ -99,17 +99,38 @@ describe("createProxyServer", () => {
       expect(res.body).toContain("Not Found");
     });
 
-    it("returns 421 with a DNS note for a public host that has no route", async () => {
+    it("returns a 421 HTML page with a DNS note for a public host that has no route", async () => {
       const server = trackServer(
         createProxyServer({ getRoutes: () => [], proxyPort: TEST_PROXY_PORT })
       );
       await listen(server);
 
-      const res = await request(server, { host: "example.com" });
+      const res = await request(server, { host: "<script>alert(1)</script>.com" });
       expect(res.status).toBe(421);
-      expect(res.headers["x-content-type-options"]).toBe("nosniff");
-      expect(res.body).toContain("DNS sent example.com to this computer");
+      expect(res.headers["content-type"]).toBe("text/html");
+      expect(res.headers.vary).toBe("Accept");
+      expect(res.body).toContain("Misdirected Request");
+      expect(res.body).toContain(
+        "DNS sent &lt;script&gt;alert(1)&lt;/script&gt;.com to this computer"
+      );
+      expect(res.body).not.toContain("<script>alert(1)</script>");
       expect(res.body).not.toContain("Active apps");
+    });
+
+    it("returns a 421 JSON error for a public host that has no route", async () => {
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => [], proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "example.com", accept: "application/json" });
+      expect(res.status).toBe(421);
+      expect(res.headers["content-type"]).toBe("application/json; charset=utf-8");
+      expect(JSON.parse(res.body)).toEqual({
+        error: "misdirected_request",
+        upstream: "example.com",
+        message: "DNS sent example.com to this computer. This is not the real site.",
+      });
     });
 
     it("keeps the 404 page for unknown names inside every configured TLD and for IP hosts", async () => {
