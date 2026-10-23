@@ -1694,7 +1694,7 @@ const PACKAGE_RUNNERS: Record<string, PackageRunnerSpec> = {
   pnpm: { subcommands: ["dlx", "exec"] },
   npm: {
     subcommands: ["exec", "x"],
-    valueFlags: ["-c", "--call", "-p", "--package", "-w", "--workspace"],
+    valueFlags: ["-c", "--call", "--package", "-w", "--workspace", "--prefix"],
     separatorRequired: true,
   },
 };

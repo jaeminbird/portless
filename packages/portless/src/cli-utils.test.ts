@@ -1062,19 +1062,35 @@ describe("injectFrameworkFlags", () => {
     ]);
   });
 
-  it("injects flags for npm exec -p astro -- astro dev", () => {
-    const args = ["npm", "exec", "-p", "astro", "--", "astro", "dev"];
+  it("injects flags for npm exec --package astro -- astro dev", () => {
+    const args = ["npm", "exec", "--package", "astro", "--", "astro", "dev"];
     injectFrameworkFlags(args, 4567);
     expect(args).toEqual([
       "npm",
       "exec",
-      "-p",
+      "--package",
       "astro",
       "--",
       "astro",
       "dev",
       "--port",
       "4567",
+      "--host",
+      "127.0.0.1",
+    ]);
+    const prefixed = ["npm", "--prefix", "./app", "exec", "--", "vite", "dev"];
+    injectFrameworkFlags(prefixed, 4567);
+    expect(prefixed).toEqual([
+      "npm",
+      "--prefix",
+      "./app",
+      "exec",
+      "--",
+      "vite",
+      "dev",
+      "--port",
+      "4567",
+      "--strictPort",
       "--host",
       "127.0.0.1",
     ]);
