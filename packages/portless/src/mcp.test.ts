@@ -74,6 +74,12 @@ describe("buildArgv", () => {
     }
   );
 
+  it("rejects a flag-shaped name so it cannot become a CLI flag", () => {
+    expect(() => buildArgv("portless_alias_add", { name: "--remove", port: 5432 })).toThrow(
+      expect.objectContaining({ code: -32602 })
+    );
+  });
+
   it("rejects --foreground for proxy start with -32602", () => {
     expect(() => buildArgv("portless_proxy_start", { extraArgs: ["--foreground"] })).toThrow(
       expect.objectContaining({ code: -32602 })
@@ -133,7 +139,10 @@ describe("tools/call validation", () => {
     const remove = TOOLS.find((t) => t.name === "portless_alias_remove");
     const add = TOOLS.find((t) => t.name === "portless_alias_add");
     expect(remove?.annotations.destructiveHint).toBe(true);
-    expect(add?.annotations.destructiveHint).toBe(false);
+    expect(add?.annotations.destructiveHint).toBe(true);
+    expect(TOOLS.find((t) => t.name === "portless_proxy_start")?.annotations.destructiveHint).toBe(
+      false
+    );
   });
 });
 
@@ -214,7 +223,7 @@ describe("portless mcp end to end", () => {
 
       const out = await new Promise<{ stdout: string; code: number | null }>((resolve, reject) => {
         const child = spawn(process.execPath, [CLI_PATH, "mcp"], {
-          env,
+          env: { ...env, PORTLESS: "0" },
           stdio: ["pipe", "pipe", "pipe"],
         });
         let stdout = "";

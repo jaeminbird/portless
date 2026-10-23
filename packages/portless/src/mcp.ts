@@ -14,7 +14,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { stripVTControlCharacters } from "node:util";
 import colors from "./colors.js";
-import { isWindows } from "./cli-utils.js";
+import { isWindows, killTree } from "./cli-utils.js";
 
 const VERSION = typeof __VERSION__ === "string" ? __VERSION__ : "0.0.0";
 
@@ -146,13 +146,14 @@ export const TOOLS: ToolDef[] = [
       port: PORT_PROPERTY,
       force: {
         type: "boolean",
-        description: "Replace an existing route with the same name.",
+        description:
+          "Replace an existing route with the same name. If a running app owns it, that app is stopped.",
       },
     },
     ["name", "port"],
     {
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: false,
       openWorldHint: true,
     }
@@ -341,6 +342,7 @@ function readString(
 function readRequiredName(args: Record<string, unknown>, key: string): string {
   const value = readString(args, key, true);
   if (value === undefined || value.length === 0) fail(`${key} must not be empty`);
+  if (value.startsWith("-")) fail(`${key} must not start with "-"`);
   return value;
 }
 
@@ -485,6 +487,7 @@ function runChild(
   return new Promise((resolve, reject) => {
     const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: "1" };
     delete env.FORCE_COLOR;
+    delete env.PORTLESS;
 
     const child = spawn(process.execPath, [process.argv[1], ...argv], {
       cwd,
@@ -501,7 +504,8 @@ function runChild(
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      killTree(child, "SIGKILL");
+      finish(null);
     }, timeoutMs);
 
     const finish = (code: number | null) => {
@@ -804,13 +808,10 @@ export async function runMcp(args: string[]): Promise<void> {
   }
 
   const server = createServer(profiles);
-  let streamFailed = false;
-  const onStreamError = (): void => {
-    streamFailed = true;
-  };
+  const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  const onStreamError = (): void => rl.close();
   process.stdout.on("error", onStreamError);
 
-  const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
   for await (const line of rl) {
     const response = await server.handleLine(line);
     if (response !== null) {
@@ -820,7 +821,7 @@ export async function runMcp(args: string[]): Promise<void> {
         break;
       }
     }
-    if (server.shutdown || streamFailed) break;
+    if (server.shutdown) break;
   }
   rl.close();
   process.stdout.off("error", onStreamError);
