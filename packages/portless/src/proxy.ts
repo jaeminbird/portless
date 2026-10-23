@@ -377,8 +377,9 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
 
     if (!route) {
       const lowerHost = host.toLowerCase();
+      const nameHost = lowerHost.endsWith(".") ? lowerHost.slice(0, -1) : lowerHost;
       const isPortlessName = tldSuffixes.some(
-        (suffix) => lowerHost === suffix.slice(1) || lowerHost.endsWith(suffix)
+        (suffix) => nameHost === suffix.slice(1) || nameHost.endsWith(suffix)
       );
       const isIpAddress = net.isIPv4(host) || rawHost.startsWith("[");
       if (!isPortlessName && !isIpAddress) {

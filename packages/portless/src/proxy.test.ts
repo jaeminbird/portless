@@ -100,8 +100,9 @@ describe("createProxyServer", () => {
     });
 
     it("returns a 421 HTML page with a DNS note for a public host that has no route", async () => {
+      const routes = makeRoutes(1);
       const server = trackServer(
-        createProxyServer({ getRoutes: () => [], proxyPort: TEST_PROXY_PORT })
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
       );
       await listen(server);
 
@@ -114,6 +115,7 @@ describe("createProxyServer", () => {
         "DNS sent &lt;script&gt;alert(1)&lt;/script&gt;.com to this computer"
       );
       expect(res.body).not.toContain("<script>alert(1)</script>");
+      expect(res.body).not.toContain("app0.localhost");
       expect(res.body).not.toContain("Active apps");
     });
 
@@ -146,6 +148,7 @@ describe("createProxyServer", () => {
 
       for (const host of [
         "unknown.localhost",
+        "unknown.localhost.",
         "unknown.test",
         "localhost",
         "MyApp.Localhost",
