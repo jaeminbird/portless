@@ -376,6 +376,20 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
     const route = findRoute(routes, rawHost, strict);
 
     if (!route) {
+      const lowerHost = host.toLowerCase();
+      const isPortlessName = tldSuffixes.some(
+        (suffix) => lowerHost === suffix.slice(1) || lowerHost.endsWith(suffix)
+      );
+      const isIpAddress = net.isIPv4(host) || rawHost.startsWith("[");
+      if (!isPortlessName && !isIpAddress) {
+        res.writeHead(421, {
+          "Content-Type": "text/plain",
+          "X-Content-Type-Options": "nosniff",
+        });
+        res.end(`DNS sent ${host} to this computer. This is not the real site.\n`);
+        return;
+      }
+
       const safeHost = escapeHtml(host);
       const matchedSuffix = tldSuffixes
         .filter((suffix) => host.endsWith(suffix))
