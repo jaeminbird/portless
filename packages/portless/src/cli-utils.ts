@@ -10,7 +10,7 @@ import { execFileSync, execSync, spawn } from "node:child_process";
 import { HOSTS_SYNC_PATH, PORTLESS_HEADER } from "./proxy.js";
 import { checkHostResolution, getManagedHostnames, syncHostsFile } from "./hosts.js";
 import { resolveScript, resolveScriptRaw } from "./config.js";
-import { createLoopbackConnection, resolveUserHome } from "./utils.js";
+import { createLoopbackConnection, parsePort, resolveUserHome } from "./utils.js";
 import {
   HOSTS_SYNC_AUTH_CHALLENGE_HEADER,
   HOSTS_SYNC_AUTH_HEADER,
@@ -392,8 +392,8 @@ export function getProtocolPort(tls: boolean): number {
 export function getDefaultPort(tls?: boolean): number {
   const envPort = process.env.PORTLESS_PORT;
   if (envPort) {
-    const port = parseInt(envPort, 10);
-    if (!isNaN(port) && port >= 1 && port <= 65535) return port;
+    const port = parsePort(envPort);
+    if (port !== null) return port;
   }
   return tls === undefined ? FALLBACK_PROXY_PORT : getProtocolPort(tls);
 }
@@ -1264,6 +1264,7 @@ export function findPidsOnPort(port: number): number[] {
       const output = execSync("netstat -ano -p tcp", {
         encoding: "utf-8",
         timeout: PID_LOOKUP_TIMEOUT_MS,
+        windowsHide: true,
       });
       const pid = parsePidFromNetstat(output, port);
       return pid === null ? [] : [pid];
@@ -1356,25 +1357,7 @@ export function killOrphanedProcessGroup(
  * Returns null if the PID cannot be determined.
  */
 export function findPidOnPort(port: number): number | null {
-  try {
-    if (isWindows) {
-      const output = execSync("netstat -ano -p tcp", {
-        encoding: "utf-8",
-        timeout: PID_LOOKUP_TIMEOUT_MS,
-      });
-      return parsePidFromNetstat(output, port);
-    }
-
-    const output = execSync(`lsof -ti tcp:${port} -sTCP:LISTEN`, {
-      encoding: "utf-8",
-      timeout: PID_LOOKUP_TIMEOUT_MS,
-    });
-    // lsof may return multiple PIDs (one per line); take the first
-    const pid = parseInt(output.trim().split("\n")[0], 10);
-    return isNaN(pid) ? null : pid;
-  } catch {
-    return null;
-  }
+  return findPidsOnPort(port)[0] ?? null;
 }
 
 /**
@@ -1671,7 +1654,22 @@ const FRAMEWORKS_NEEDING_PORT: Record<string, FrameworkSpec> = {
       "--root",
     ],
   },
-  astro: { strictPort: false, serverSubcommands: ["dev", "preview"], defaultIsServer: false },
+  astro: {
+    strictPort: false,
+    serverSubcommands: ["dev", "preview"],
+    defaultIsServer: false,
+    valueFlags: [
+      "--base",
+      "--config",
+      "--host",
+      "--mode",
+      "--open",
+      "--outDir",
+      "--port",
+      "--root",
+      "--site",
+    ],
+  },
   ng: { strictPort: false, serverSubcommands: ["serve", "dev", "s"], defaultIsServer: false },
   "react-native": { strictPort: false, serverSubcommands: ["start"], defaultIsServer: false },
   expo: { strictPort: false, serverSubcommands: ["start", "serve"], defaultIsServer: true },

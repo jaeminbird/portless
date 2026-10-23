@@ -1,8 +1,41 @@
 # Changelog
 
-## 0.15.8
+## 0.15.10
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- **Host certificates**: Omit invalid sibling wildcard names from two-label host certificates and regenerate cached certificates that contain them, fixing TLS rejection on Apple platforms. (#491)
+- **Proxy error responses**: Return JSON for portless-generated 404, 502, and 508 errors when the client does not accept HTML. (#485)
+- **Port validation**: Reject malformed port values instead of accepting leading digits across CLI flags, environment variables, aliases, and service configuration. (#493)
+
+### Contributors
+
+- @lahfir
+- @BlvckParrot
+- @BetterAndBetterII
+
+<!-- release:end -->
+
+## 0.15.9
+
+### New Features
+
+- Added **Cloudflare quick tunnels** with `--cloudflare` to share apps through a public URL (#480)
+- Added **route uptime** to the proxy app list and `portless list` (#472)
+- Added **hostname filtering** and a **newest-first toggle** to the proxy's 404-page app list (#473, #474)
+
+### Bug Fixes
+
+- Fixed **uppercase URL schemes** so HTTP and HTTPS prefixes are removed correctly from hostnames (#484)
+
+### Contributors
+
+- @lahfir
+- @kumburovicbranko682-boop
+
+## 0.15.8
 
 ### Bug Fixes
 
@@ -13,7 +46,6 @@
 ### Contributors
 
 - @Railly
-<!-- release:end -->
 
 ## 0.15.7
 

@@ -22,6 +22,7 @@ import {
   isProcessAlive as isPidAlive,
   parseHostname,
   parseHostnames,
+  parsePort,
 } from "./utils.js";
 import {
   checkHostResolution,
@@ -123,7 +124,7 @@ import {
   loadPackagePortlessConfig,
   ConfigValidationError,
 } from "./config.js";
-import type { AppConfig } from "./config.js";
+import type { AppConfig, LoadedConfig } from "./config.js";
 import { findWorkspaceRoot, discoverWorkspacePackages } from "./workspace.js";
 import type { WorkspacePackage } from "./workspace.js";
 import {
@@ -1705,8 +1706,8 @@ function parseAppPort(value: string | undefined): number {
     console.error(colors.red("Error: --app-port requires a port number."));
     process.exit(1);
   }
-  const port = parseInt(value, 10);
-  if (isNaN(port) || port < 1 || port > 65535) {
+  const port = parsePort(value);
+  if (port === null) {
     console.error(colors.red(`Error: Invalid app port "${value}". Must be 1-65535.`));
     process.exit(1);
   }
@@ -1716,8 +1717,8 @@ function parseAppPort(value: string | undefined): number {
 function appPortFromEnv(): number | undefined {
   const envVal = process.env.PORTLESS_APP_PORT;
   if (!envVal) return undefined;
-  const port = parseInt(envVal, 10);
-  if (isNaN(port) || port < 1 || port > 65535) {
+  const port = parsePort(envVal);
+  if (port === null) {
     console.error(colors.red(`Error: Invalid PORTLESS_APP_PORT="${envVal}". Must be 1-65535.`));
     process.exit(1);
   }
@@ -1998,6 +1999,8 @@ ${colors.bold("How it works:")}
      script, or is invoked with runner flags before the script name
      (bun run --bun dev); set the port in those yourself
   6. The proxy listens only on 127.0.0.1 and ::1 unless LAN mode is enabled
+  7. Proxy errors (404, 502, 508) are an HTML page for browsers and JSON
+     ({"error","upstream","message"}) for clients that do not accept text/html
   Elevated proxy processes keep the invoking user's ~/.portless state directory.
 
 ${colors.bold("HTTP/2 + HTTPS (default):")}
@@ -2519,8 +2522,8 @@ ${colors.bold("Examples:")}
   }
 
   const hostnames = buildHostnames(aliasName, tlds);
-  const port = parseInt(aliasPort, 10);
-  if (isNaN(port) || port < 1 || port > 65535) {
+  const port = parsePort(aliasPort);
+  if (port === null) {
     console.error(colors.red(`Error: Invalid port "${aliasPort}". Must be 1-65535.`));
     process.exit(1);
   }
@@ -3045,10 +3048,13 @@ async function handleProxy(args: string[]): Promise<void> {
     if (portIdx !== -1) {
       const portValue = args[portIdx + 1];
       if (portValue && !portValue.startsWith("-")) {
-        const parsed = parseInt(portValue, 10);
-        if (!isNaN(parsed) && parsed >= 1 && parsed <= 65535) {
-          explicitPort = parsed;
+        const parsed = parsePort(portValue);
+        if (parsed === null) {
+          console.error(colors.red(`Error: Invalid port number: ${portValue}`));
+          console.error(colors.blue("Port must be between 1 and 65535."));
+          process.exit(1);
         }
+        explicitPort = parsed;
       }
     }
 
@@ -3147,12 +3153,13 @@ ${colors.bold("LAN mode (--lan):")}
       console.error(colors.cyan("  portless proxy start -p 8080"));
       process.exit(1);
     }
-    proxyPort = parseInt(portValue, 10);
-    if (isNaN(proxyPort) || proxyPort < 1 || proxyPort > 65535) {
+    const parsed = parsePort(portValue);
+    if (parsed === null) {
       console.error(colors.red(`Error: Invalid port number: ${portValue}`));
       console.error(colors.blue("Port must be between 1 and 65535."));
       process.exit(1);
     }
+    proxyPort = parsed;
     hasExplicitPort = true;
   }
 
@@ -3587,15 +3594,18 @@ ${colors.bold("LAN mode (--lan):")}
   }
 }
 
+type AppConfigWithSource = AppConfig & { source: LoadedConfig["source"] };
+
 /**
- * Load the effective AppConfig for the current directory from portless.json.
+ * Load the effective AppConfig for the current directory from portless.json or
+ * the package.json "portless" key, tagged with the file it came from.
  * Handles both single-app (top-level fields) and monorepo (apps map) configs.
  */
-function loadAppConfig(cwd: string = process.cwd()): AppConfig | null {
+function loadAppConfig(cwd: string = process.cwd()): AppConfigWithSource | null {
   try {
     const loaded = loadConfig(cwd);
     if (!loaded) return null;
-    return resolveAppConfig(loaded.config, loaded.configDir, cwd);
+    return { ...resolveAppConfig(loaded.config, loaded.configDir, cwd), source: loaded.source };
   } catch (err) {
     if (err instanceof ConfigValidationError) {
       console.error(colors.red(`Error: ${err.message}`));
@@ -3660,7 +3670,7 @@ async function handleDefaultMode(
 async function handleDefaultSingle(
   cwd: string,
   scriptName: string,
-  appConfig: AppConfig | null
+  appConfig: AppConfigWithSource | null
 ): Promise<void> {
   const resolved = resolveScriptCommand(scriptName, cwd);
   if (!resolved) {
@@ -3676,7 +3686,7 @@ async function handleDefaultSingle(
       .split(".")
       .map((label) => truncateLabel(label))
       .join(".");
-    nameSource = "portless.json";
+    nameSource = appConfig.source;
   } else {
     const inferred = inferProjectName(cwd);
     baseName = inferred.name;
@@ -4288,7 +4298,7 @@ async function handleRunMode(args: string[], globalScript?: string): Promise<voi
       .split(".")
       .map((label) => truncateLabel(label))
       .join(".");
-    nameSource = "portless.json";
+    nameSource = appConfig.source;
   } else {
     const inferred = inferProjectName();
     baseName = inferred.name;

@@ -5,6 +5,12 @@ import * as http from "node:http";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  HOSTS_SYNC_AUTH_CHALLENGE_HEADER,
+  HOSTS_SYNC_AUTH_PROOF_HEADER,
+  generateHostsSyncToken,
+  writeHostsSyncToken,
+} from "./hosts-sync-auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, "../dist/cli.js");
@@ -233,13 +239,22 @@ async function startMockProxy(
 ): Promise<{ port: number; child: ReturnType<typeof spawn> }> {
   const port = options.port ?? (await getFreePort());
   const scriptPath = path.join(dir, `mock-proxy-${port}.cjs`);
+  const token = options.acknowledgeHostsSync !== false ? generateHostsSyncToken() : null;
+  if (token) writeHostsSyncToken(dir, token);
   fs.writeFileSync(
     scriptPath,
     [
       'const http = require("node:http");',
+      token ? 'const crypto = require("node:crypto");' : "",
       "const server = http.createServer((req, res) => {",
       '  res.setHeader("X-Portless", "1");',
-      options.acknowledgeHostsSync !== false
+      token
+        ? `  const challenge = req.headers[${JSON.stringify(HOSTS_SYNC_AUTH_CHALLENGE_HEADER)}];
+  if (typeof challenge === "string") {
+    res.setHeader(${JSON.stringify(HOSTS_SYNC_AUTH_PROOF_HEADER)}, crypto.createHmac("sha256", ${JSON.stringify(token)}).update(challenge).digest("hex"));
+  }`
+        : "",
+      token
         ? '  if (req.method === "POST" && req.url === "/.portless/hosts-sync") { res.writeHead(204); res.end(); return; }'
         : "",
       '  res.end("ok");',
@@ -1030,6 +1045,26 @@ describe("CLI", () => {
       expect(stderr).toContain("Invalid port");
     });
 
+    it("exits 1 without registering a route for a port with trailing text", () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "portless-alias-port-"));
+      try {
+        const { status, stderr } = run(["alias", "mydb", "192.168.1.1:8123"], {
+          env: { PORTLESS_STATE_DIR: tmpDir },
+        });
+        expect(status).toBe(1);
+        expect(stderr).toContain('Invalid port "192.168.1.1:8123"');
+        expect(fs.existsSync(path.join(tmpDir, "routes.json"))).toBe(false);
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it("proxy stop exits 1 for a port with trailing text", () => {
+      const { status, stderr } = run(["proxy", "stop", "-p", "8123abc"]);
+      expect(status).toBe(1);
+      expect(stderr).toContain("Invalid port number: 8123abc");
+    });
+
     it("exits 1 when --remove has no name", () => {
       const { status, stderr } = run(["alias", "--remove"]);
       expect(status).toBe(1);
@@ -1204,6 +1239,8 @@ describe("CLI", () => {
         env: {
           PORTLESS: "0",
           PORTLESS_STATE_DIR: tmpDir,
+          HOME: tmpDir,
+          USERPROFILE: tmpDir,
         },
       });
       fs.rmSync(tmpDir, { recursive: true, force: true });
