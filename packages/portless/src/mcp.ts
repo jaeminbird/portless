@@ -71,15 +71,6 @@ export interface ToolDef {
   };
 }
 
-interface ToolMeta {
-  def: ToolDef;
-  own: string[];
-  shared: boolean;
-  inProcess: boolean;
-}
-
-const TOOL_META: ToolMeta[] = [];
-
 function tool(
   name: string,
   title: string,
@@ -87,28 +78,21 @@ function tool(
   properties: Record<string, unknown>,
   required: string[],
   annotations: ToolDef["annotations"],
-  profileless = false
+  inProcess = false
 ): ToolDef {
   const inputSchema: ToolDef["inputSchema"] = {
     type: "object",
-    properties: profileless ? { ...properties } : { ...properties, ...SHARED_PROPERTIES },
+    properties: inProcess ? { ...properties } : { ...properties, ...SHARED_PROPERTIES },
     additionalProperties: false,
   };
   if (required.length > 0) inputSchema.required = required;
-  const def: ToolDef = {
+  return {
     name,
     title,
     description,
     inputSchema,
     annotations,
   };
-  TOOL_META.push({
-    def,
-    own: Object.keys(properties),
-    shared: !profileless,
-    inProcess: profileless,
-  });
-  return def;
 }
 
 const NAME_PROPERTY = { type: "string", description: "App or alias name." };
@@ -309,10 +293,6 @@ const PROFILE_ALIASES: Record<string, string> = { default: "core", full: "all" }
 
 const VALID_PROFILES = "core, proxy, diagnostics, all (aliases: default = core, full = all)";
 
-function metaFor(toolName: string): ToolMeta | undefined {
-  return TOOL_META.find((meta) => meta.def.name === toolName);
-}
-
 /** Parse a --tools value into canonical profile names (aliases resolved). */
 export function parseToolsFlag(value: string): string[] {
   const requested = value
@@ -387,41 +367,33 @@ function readPort(
   return value;
 }
 
-function readExtraArgs(args: Record<string, unknown>): string[] {
-  const value = args.extraArgs;
+function readStringArray(args: Record<string, unknown>, key: "extraArgs" | "tld"): string[] {
+  const value = args[key];
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) fail("extraArgs must be an array");
+  if (!Array.isArray(value) || (key === "tld" && value.length === 0)) {
+    fail(key === "tld" ? "tld must not be empty" : "extraArgs must be an array");
+  }
   return value.map((item, index) => {
-    if (typeof item !== "string") fail(`extraArgs[${index}] must be a string`);
+    if (typeof item !== "string") fail(`${key}[${index}] must be a string`);
     return item;
   });
 }
 
-function readTld(args: Record<string, unknown>): string[] {
-  const value = args.tld;
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || value.length === 0) fail("tld must not be empty");
-  return value.map((item, index) => {
-    if (typeof item !== "string") fail(`tld[${index}] must be a string`);
-    return item;
-  });
-}
-
-function validateShared(args: Record<string, unknown>): void {
+function validateShared(args: Record<string, unknown>): string[] {
   readString(args, "cwd", false);
-  readExtraArgs(args);
+  const extraArgs = readStringArray(args, "extraArgs");
   const timeout = args.timeoutMs;
   if (timeout !== undefined && timeout !== null) {
     if (typeof timeout !== "number" || !Number.isInteger(timeout) || timeout < 1) {
       fail("timeoutMs must be a positive integer");
     }
   }
+  return extraArgs;
 }
 
 /** Build the CLI argv (without node/script path, without cwd/timeoutMs) for a child-run tool. */
 export function buildArgv(toolName: string, args: Record<string, unknown>): string[] {
-  validateShared(args);
-  const extraArgs = readExtraArgs(args);
+  const extraArgs = validateShared(args);
   const argv: string[] = [];
 
   switch (toolName) {
@@ -459,7 +431,7 @@ export function buildArgv(toolName: string, args: Record<string, unknown>): stri
       if (port !== undefined) argv.push("-p", String(port));
       if (readBoolean(args, "noTls") === true) argv.push("--no-tls");
       if (readBoolean(args, "lan") === true) argv.push("--lan");
-      for (const tld of readTld(args)) argv.push("--tld", tld);
+      for (const tld of readStringArray(args, "tld")) argv.push("--tld", tld);
       if (readBoolean(args, "wildcard") === true) argv.push("--wildcard");
       break;
     }
@@ -487,7 +459,6 @@ export function buildArgv(toolName: string, args: Record<string, unknown>): stri
   return argv;
 }
 
-/** Map a finished child run to an MCP tool result. */
 export function toToolResult(run: { exitCode: number | null; stdout: string; stderr: string }): {
   content: { type: "text"; text: string }[];
   structuredContent: { exitCode: number | null; stdout: string; stderr: string };
@@ -515,19 +486,13 @@ function runChild(
     const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: "1" };
     delete env.FORCE_COLOR;
 
-    let child;
-    try {
-      child = spawn(process.execPath, [process.argv[1], ...argv], {
-        cwd,
-        env,
-        stdio: ["ignore", "pipe", "pipe"],
-        detached: !isWindows,
-        windowsHide: true,
-      });
-    } catch (error) {
-      reject(new McpError(-32603, `Failed to run portless: ${(error as Error).message}`));
-      return;
-    }
+    const child = spawn(process.execPath, [process.argv[1], ...argv], {
+      cwd,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: !isWindows,
+      windowsHide: true,
+    });
 
     const out: Buffer[] = [];
     const err: Buffer[] = [];
@@ -552,8 +517,8 @@ function runChild(
       resolve({ exitCode: timedOut ? null : code, stdout, stderr });
     };
 
-    child.stdout?.on("data", (chunk: Buffer) => out.push(Buffer.from(chunk)));
-    child.stderr?.on("data", (chunk: Buffer) => err.push(Buffer.from(chunk)));
+    child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
     child.on("error", (error) => {
       if (settled) return;
       settled = true;
@@ -581,33 +546,6 @@ function errorResponse(id: unknown, code: number, message: string): Record<strin
 
 function resultResponse(id: unknown, result: Record<string, unknown>): Record<string, unknown> {
   return { jsonrpc: "2.0", id, result };
-}
-
-function profileSummaries(): {
-  name: string;
-  description: string;
-  toolCount: number;
-  usage: string;
-}[] {
-  return Object.keys(PROFILES).map((name) => {
-    const profile = PROFILES[name];
-    return {
-      name,
-      description: profile.description,
-      toolCount: profile.tools === "all" ? TOOLS.length : profile.tools.length,
-      usage: `portless mcp --tools ${name}`,
-    };
-  });
-}
-
-function profilesText(profiles: string[]): string {
-  const lines = [`Active profiles: ${profiles.join(", ")}`];
-  for (const profile of profileSummaries()) {
-    lines.push(
-      `${profile.name}: ${profile.description} (${profile.toolCount} tools), ${profile.usage}`
-    );
-  }
-  return lines.join("\n");
 }
 
 /** A server for the given canonical profile names. */
@@ -700,9 +638,9 @@ export function createServer(profiles: string[]): {
         if (rawArgs !== undefined && rawArgs !== null && !isObject(rawArgs)) {
           return errorResponse(id, -32602, "tool arguments must be an object");
         }
-        const args = isObject(rawArgs) ? rawArgs : {};
-        const meta = metaFor(toolName);
-        if (!meta) return errorResponse(id, -32602, `Unknown tool: ${toolName}`);
+        const args = rawArgs ?? {};
+        const def = TOOLS.find((tool) => tool.name === toolName);
+        if (!def) return errorResponse(id, -32602, `Unknown tool: ${toolName}`);
         if (!enabled.has(toolName)) {
           return resultResponse(
             id,
@@ -712,12 +650,12 @@ export function createServer(profiles: string[]): {
           );
         }
 
-        const accepted = new Set([...meta.own, ...(meta.shared ? SHARED_FIELDS : [])]);
+        const accepted = Object.keys(def.inputSchema.properties);
         const unknown = Object.keys(args)
-          .filter((key) => !accepted.has(key))
+          .filter((key) => !accepted.includes(key))
           .sort();
         if (unknown.length > 0) {
-          const own = meta.own.length > 0 ? meta.own.join(", ") : "none";
+          const own = accepted.filter((key) => !SHARED_FIELDS.includes(key)).join(", ") || "none";
           return resultResponse(
             id,
             toolErrorResult(
@@ -727,11 +665,23 @@ export function createServer(profiles: string[]): {
         }
 
         try {
-          if (meta.inProcess) {
-            const text = profilesText(profiles);
+          if (toolName === "portless_tools_profiles") {
+            const summaries = Object.entries(PROFILES).map(([name, profile]) => ({
+              name,
+              description: profile.description,
+              toolCount: profile.tools === "all" ? TOOLS.length : profile.tools.length,
+              usage: `portless mcp --tools ${name}`,
+            }));
+            const text = [
+              `Active profiles: ${profiles.join(", ")}`,
+              ...summaries.map(
+                (profile) =>
+                  `${profile.name}: ${profile.description} (${profile.toolCount} tools), ${profile.usage}`
+              ),
+            ].join("\n");
             return resultResponse(id, {
               content: [{ type: "text", text }],
-              structuredContent: { activeProfiles: profiles, profiles: profileSummaries() },
+              structuredContent: { activeProfiles: profiles, profiles: summaries },
               isError: false,
             });
           }
@@ -780,7 +730,6 @@ export function createServer(profiles: string[]): {
   };
 }
 
-/** Print help for `portless mcp`. */
 export function printMcpHelp(): void {
   process.stdout.write(
     [
@@ -791,10 +740,9 @@ export function printMcpHelp(): void {
       "stdout carries only protocol messages and diagnostics go to stderr.",
       "",
       "Profiles:",
-      "  core         Everyday route lookup and static aliases.",
-      "  proxy        Start and stop the shared portless proxy.",
-      "  diagnostics  Health checks, cleanup, and version information.",
-      "  all          Every available tool.",
+      ...Object.entries(PROFILES).map(
+        ([name, profile]) => `  ${name.padEnd(13)}${profile.description}`
+      ),
       "",
       "Common tools:",
       "  portless_list            List active routes.",
@@ -819,7 +767,6 @@ export function printMcpHelp(): void {
   );
 }
 
-/** Run the stdio MCP server. */
 export async function runMcp(args: string[]): Promise<void> {
   let toolsValue: string | undefined;
 

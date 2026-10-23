@@ -9,11 +9,21 @@ import { TOOLS, PROFILES, buildArgv, parseToolsFlag, toToolResult, createServer 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, "../dist/cli.js");
 
-/** Send one JSON-RPC request to a fresh server and return the response. */
 async function call(profiles: string[], method: string, params?: unknown) {
   const server = createServer(profiles);
   const res = await server.handleLine(JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }));
-  return res as { result?: any; error?: { code: number; message: string } };
+  return res as {
+    result: {
+      tools: typeof TOOLS;
+      content: { text: string }[];
+      isError: boolean;
+      structuredContent?: unknown;
+      protocolVersion: string;
+      serverInfo: { name: string };
+      capabilities: unknown;
+    };
+    error?: { code: number; message: string };
+  };
 }
 
 const MIN_ARGS: Record<string, Record<string, unknown>> = {
@@ -41,35 +51,28 @@ describe("tool registry", () => {
 });
 
 describe("buildArgv", () => {
-  it("builds argv from typed args", () => {
-    expect(buildArgv("portless_get", { name: "backend", noWorktree: true })).toEqual([
-      "get",
-      "backend",
-      "--no-worktree",
-    ]);
-    expect(buildArgv("portless_get", { name: "backend", noWorktree: false })).toEqual([
-      "get",
-      "backend",
-    ]);
-    expect(buildArgv("portless_alias_add", { name: "db", port: 5432, force: true })).toEqual([
-      "alias",
-      "db",
-      "5432",
-      "--force",
-    ]);
-    expect(buildArgv("portless_alias_remove", { name: "db" })).toEqual(["alias", "--remove", "db"]);
-    expect(
-      buildArgv("portless_proxy_start", { port: 1355, noTls: true, tld: ["test", "localhost"] })
-    ).toEqual(["proxy", "start", "-p", "1355", "--no-tls", "--tld", "test", "--tld", "localhost"]);
-    expect(buildArgv("portless_version", {})).toEqual(["--version"]);
-  });
-
-  it("appends extraArgs last and drops cwd and timeoutMs", () => {
-    expect(buildArgv("portless_list", { extraArgs: ["--x"], cwd: "/tmp", timeoutMs: 5 })).toEqual([
-      "list",
-      "--x",
-    ]);
-  });
+  it.each([
+    ["portless_get", { name: "backend", noWorktree: true }, ["get", "backend", "--no-worktree"]],
+    ["portless_get", { name: "backend", noWorktree: false }, ["get", "backend"]],
+    [
+      "portless_alias_add",
+      { name: "db", port: 5432, force: true },
+      ["alias", "db", "5432", "--force"],
+    ],
+    ["portless_alias_remove", { name: "db" }, ["alias", "--remove", "db"]],
+    [
+      "portless_proxy_start",
+      { port: 1355, noTls: true, tld: ["test", "localhost"] },
+      ["proxy", "start", "-p", "1355", "--no-tls", "--tld", "test", "--tld", "localhost"],
+    ],
+    ["portless_version", {}, ["--version"]],
+    ["portless_list", { extraArgs: ["--x"], cwd: "/tmp", timeoutMs: 5 }, ["list", "--x"]],
+  ] as const)(
+    "builds %s argv without cwd or timeoutMs and appends extraArgs last",
+    (tool, args, argv) => {
+      expect(buildArgv(tool, args)).toEqual(argv);
+    }
+  );
 
   it("rejects --foreground for proxy start with -32602", () => {
     expect(() => buildArgv("portless_proxy_start", { extraArgs: ["--foreground"] })).toThrow(
