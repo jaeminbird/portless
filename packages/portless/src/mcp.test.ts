@@ -4,7 +4,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { TOOLS, PROFILES, buildArgv, parseToolsFlag, toToolResult, createServer } from "./mcp.js";
+import {
+  TOOLS,
+  PROFILES,
+  buildArgv,
+  parseToolsFlag,
+  toToolResult,
+  createServer,
+  type ToolDef,
+} from "./mcp.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, "../dist/cli.js");
@@ -26,11 +34,21 @@ async function call(profiles: string[], method: string, params?: unknown) {
   };
 }
 
-const MIN_ARGS: Record<string, Record<string, unknown>> = {
-  get: { name: "backend" },
-  alias_add: { name: "db", port: 5432 },
-  alias_remove: { name: "db" },
-};
+/** Valid arguments built from a tool's schema: true, 1, ["sample"], or "Sample". */
+function sampleArgs(tool: ToolDef, requiredOnly: boolean): Record<string, unknown> {
+  const required = tool.inputSchema.required ?? [];
+  const args: Record<string, unknown> = {};
+  for (const [key, schema] of Object.entries(tool.inputSchema.properties)) {
+    if (["cwd", "extraArgs", "timeoutMs"].includes(key)) continue;
+    if (requiredOnly && !required.includes(key)) continue;
+    const { type } = schema as { type: string };
+    args[key] =
+      type === "boolean" ? true : type === "integer" ? 1 : type === "array" ? ["sample"] : "Sample";
+  }
+  return args;
+}
+
+const CHILD_TOOLS = TOOLS.filter((t) => t.name !== "tools_profiles");
 
 describe("tool registry", () => {
   it("has unique names, each in a non-all profile, and buildArgv covers them", () => {
@@ -43,7 +61,9 @@ describe("tool registry", () => {
     for (const name of names) {
       expect(inProfile.has(name)).toBe(true);
       if (name !== "tools_profiles") {
-        expect(() => buildArgv(name, MIN_ARGS[name] ?? {})).not.toThrow();
+        expect(() =>
+          buildArgv(name, sampleArgs(TOOLS.find((t) => t.name === name)!, true))
+        ).not.toThrow();
       }
     }
   });
@@ -198,43 +218,31 @@ describe("toToolResult", () => {
   });
 });
 
-/** Every command in `portless --help` maps to an MCP tool or a deliberate omission. */
-const CLI_COMMANDS: Record<string, string | { omitted: string }> = {
-  "": { omitted: "zero-arg and named mode run foreground dev servers" },
-  run: { omitted: "runs a foreground dev server" },
-  "proxy start": "proxy_start",
-  "proxy stop": "proxy_stop",
-  mcp: { omitted: "the MCP server itself" },
-  "service install": { omitted: "may prompt for sudo" },
-  get: "get",
-  alias: "alias_add",
-  "alias --remove": "alias_remove",
-  list: "list",
-  doctor: "doctor",
-  trust: { omitted: "may prompt for sudo" },
-  clean: { omitted: "may prompt for sudo" },
-  prune: "prune",
-  "hosts sync": { omitted: "may prompt for sudo" },
-  "hosts clean": { omitted: "may prompt for sudo" },
+/** Commands in `portless --help` that deliberately have no MCP tool. */
+const OMITTED_COMMANDS: Record<string, string> = {
+  portless: "zero-arg and named mode run foreground dev servers",
+  "portless run": "runs a foreground dev server",
+  "portless mcp": "the MCP server itself",
+  "portless service install": "may prompt for sudo",
+  "portless trust": "may prompt for sudo",
+  "portless clean": "may prompt for sudo",
+  "portless hosts sync": "may prompt for sudo",
+  "portless hosts clean": "may prompt for sudo",
 };
 
-/** Per tool: which `--help` lines describe it, and the flags it types or deliberately rejects. */
-const CLI_FLAGS: Record<
-  string,
-  { help: string; prefix: string; options?: boolean; known: string[] }
-> = {
-  get: { help: "get", prefix: "portless get", options: true, known: ["--no-worktree"] },
-  alias_add: { help: "alias", prefix: "portless alias <", known: ["--force"] },
-  alias_remove: { help: "alias", prefix: "portless alias --remove", known: ["--remove"] },
-  proxy_start: {
-    help: "proxy",
-    prefix: "portless proxy start",
-    known: ["-p", "--no-tls", "--lan", "--tld", "--wildcard", "--foreground"],
-  },
-  proxy_stop: { help: "proxy", prefix: "portless proxy stop", known: [] },
-  doctor: { help: "doctor", prefix: "portless doctor", options: true, known: [] },
-  prune: { help: "prune", prefix: "portless prune", options: true, known: ["--force"] },
-};
+/** Leading command words and flags of a help line or argv, e.g. "alias --remove". */
+function commandWords(tokens: string[]): string[] {
+  const words: string[] = [];
+  for (const token of tokens) {
+    if (!/^(--)?[a-z][a-z-]*$/.test(token)) break;
+    words.push(token);
+  }
+  return words;
+}
+
+function commandOf(tool: ToolDef): string[] {
+  return commandWords(buildArgv(tool.name, sampleArgs(tool, true)));
+}
 
 function cliHelp(...args: string[]): string[] {
   const env: Record<string, string | undefined> = { ...process.env, NO_COLOR: "1" };
@@ -250,43 +258,43 @@ function cliHelp(...args: string[]): string[] {
 
 describe("CLI coverage", () => {
   it("maps every command in portless --help to a tool or an omission", () => {
-    const usage = cliHelp();
-    const start = usage.indexOf("Usage:");
-    const commands = new Set<string>();
-    for (const line of usage.slice(start + 1, usage.indexOf("", start))) {
-      const words: string[] = [];
-      for (const word of line.split(/\s+/).slice(1)) {
-        if (!/^(--)?[a-z][a-z-]*$/.test(word)) break;
-        words.push(word);
-      }
-      commands.add(words.join(" "));
-    }
-    for (const command of commands) {
+    const help = cliHelp();
+    const start = help.indexOf("Usage:");
+    const tools = new Set(CHILD_TOOLS.map((t) => ["portless", ...commandOf(t)].join(" ")));
+    for (const line of help.slice(start + 1, help.indexOf("", start))) {
+      const command = ["portless", ...commandWords(line.split(/\s+/).slice(1))].join(" ");
       expect(
-        CLI_COMMANDS[command],
-        `"portless ${command}" is in --help but has no MCP tool. Add one in mcp.ts or list it as omitted.`
-      ).toBeDefined();
-    }
-    const names = new Set(TOOLS.map((t) => t.name));
-    for (const target of Object.values(CLI_COMMANDS)) {
-      if (typeof target === "string") expect(names.has(target)).toBe(true);
+        tools.has(command) || command in OMITTED_COMMANDS,
+        `"${command}" is in --help but has no MCP tool. Add one in mcp.ts or list it as omitted.`
+      ).toBe(true);
     }
   });
 
   it("types or deliberately rejects every flag a tool's --help lists", () => {
-    for (const [tool, { help, prefix, options, known }] of Object.entries(CLI_FLAGS)) {
-      const lines = cliHelp(help).filter(
-        (line) => line.startsWith(prefix) || (options === true && line.startsWith("-"))
-      );
-      const flags = new Set(
-        lines.flatMap((line) => line.match(/(?<=^|\s)(-p|--[a-z][a-z-]*)\b/g) ?? [])
-      );
-      flags.delete("--help");
-      for (const flag of flags) {
-        expect(
-          known,
-          `"${flag}" is in "portless ${help} --help" but the ${tool} tool does not handle it. Type it in mcp.ts or reject it.`
-        ).toContain(flag);
+    const pages = new Map<string, ToolDef[]>();
+    for (const tool of CHILD_TOOLS) {
+      const [page] = commandOf(tool);
+      if (!page.startsWith("-")) pages.set(page, [...(pages.get(page) ?? []), tool]);
+    }
+    for (const [page, tools] of pages) {
+      for (const line of cliHelp(page)) {
+        const words = line.startsWith("portless ") ? commandWords(line.split(/\s+/).slice(1)) : [];
+        const owner = line.startsWith("-")
+          ? tools.length === 1
+            ? tools[0]
+            : undefined
+          : tools
+              .filter((t) => commandOf(t).every((word, i) => words[i] === word))
+              .sort((a, b) => commandOf(b).length - commandOf(a).length)[0];
+        if (!owner) continue;
+        const emitted = buildArgv(owner.name, sampleArgs(owner, false));
+        for (const flag of line.match(/(?<=^|\s)(-p|--[a-z][a-z-]*)\b/g) ?? []) {
+          if (flag === "--help" || emitted.includes(flag)) continue;
+          expect(
+            () => buildArgv(owner.name, { ...sampleArgs(owner, true), extraArgs: [flag] }),
+            `"${flag}" is in "portless ${page} --help" but the ${owner.name} tool does not handle it. Type it in mcp.ts or reject it.`
+          ).toThrow();
+        }
       }
     }
   });
