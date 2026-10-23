@@ -1766,13 +1766,24 @@ function parseFrameworkInvocation(commandArgs: string[]): FrameworkInvocation | 
   const framework = FRAMEWORKS_NEEDING_PORT[basename];
   const optionEnd = commandArgs.indexOf("--", frameworkIndex + 1);
   const insertionIndex = needsSeparator || optionEnd === -1 ? commandArgs.length : optionEnd;
+  let frameworkArgs: string[];
+  if (needsSeparator) {
+    const beforeSeparator =
+      optionEnd === -1
+        ? commandArgs.slice(frameworkIndex + 1)
+        : commandArgs.slice(frameworkIndex + 1, optionEnd);
+    frameworkArgs = [
+      ...beforeSeparator.filter((arg) => !arg.startsWith("-")),
+      ...(optionEnd === -1 ? [] : commandArgs.slice(optionEnd + 1)),
+    ];
+  } else {
+    frameworkArgs = commandArgs.slice(frameworkIndex + 1, insertionIndex);
+  }
   return {
     basename,
     framework,
     frameworkIndex,
-    frameworkArgs: needsSeparator
-      ? commandArgs.slice(frameworkIndex + 1).filter((arg) => arg !== "--")
-      : commandArgs.slice(frameworkIndex + 1, insertionIndex),
+    frameworkArgs,
     insertionIndex,
     ...(needsSeparator && optionEnd === -1 ? { separator: "--" } : {}),
   };
@@ -2032,11 +2043,10 @@ function isSafeToInjectIntoScript(
   // trailing comment entirely.
   const rawScriptText = resolveScriptRaw(scriptName, packageDir);
   if (rawScriptText && isUnsafeToAppendArgs(rawScriptText)) return false;
-  // A script that ends its own option list keeps everything after `--` as
-  // positional data, so appended flags arrive as data too and the framework
-  // never reads them as options. Appending cannot reach past a `--` that lives
-  // inside the script, so leave the script alone.
-  if (rawScript.includes("--")) return false;
+  // A `--` after the framework name ends its option list, so appended flags
+  // would arrive as positional data.
+  const invocation = parseFrameworkInvocation(rawScript);
+  if (invocation && rawScript.includes("--", invocation.frameworkIndex + 1)) return false;
   // Non-server subcommands need no check here: injectFrameworkFlags appends
   // nothing for them.
   return true;

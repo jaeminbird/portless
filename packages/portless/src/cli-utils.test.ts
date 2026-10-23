@@ -1112,6 +1112,24 @@ describe("injectFrameworkFlags", () => {
     ]);
   });
 
+  it("injects past an option npm consumes for npm exec vite dev --port=3000", () => {
+    const args = ["npm", "exec", "vite", "dev", "--port=3000"];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([
+      "npm",
+      "exec",
+      "vite",
+      "dev",
+      "--port=3000",
+      "--",
+      "--port",
+      "4567",
+      "--strictPort",
+      "--host",
+      "127.0.0.1",
+    ]);
+  });
+
   it("injects flags for npx rsbuild dev", () => {
     const args = ["npx", "rsbuild", "dev"];
     injectFrameworkFlags(args, 4567);
@@ -1535,6 +1553,23 @@ describe("injectPackageScriptFrameworkFlags", () => {
     const args = ["bun", "run", "dev"];
     injectPackageScriptFrameworkFlags(args, 4567, pkgDir);
     expect(args).toEqual(["bun", "run", "dev", "--port", "4567", "--strictPort"]);
+  });
+
+  it("forwards flags through a script that uses npm exec with a separator", () => {
+    writeScripts({ dev: "npm exec -- vite dev" });
+    const args = ["npm", "run", "dev"];
+    injectPackageScriptFrameworkFlags(args, 4567, pkgDir);
+    expect(args).toEqual([
+      "npm",
+      "run",
+      "dev",
+      "--",
+      "--port",
+      "4567",
+      "--strictPort",
+      "--host",
+      "127.0.0.1",
+    ]);
   });
 
   it("ignores commands that are not <pm> run <script>", () => {
