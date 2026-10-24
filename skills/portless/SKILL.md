@@ -169,7 +169,7 @@ period.
 
 Outside LAN mode, the proxy and its HTTP redirect listener bind only to the IPv4 and IPv6 loopback addresses, `127.0.0.1` and `::1`. They do not accept connections through LAN, VPN, or other network interfaces.
 
-When portless itself returns an error (404 for an unknown host, 502 when the app is unreachable, 508 for a request loop), the body depends on the `Accept` header. Browsers (`text/html`) get an HTML page. curl, `fetch`, and other clients get JSON such as `{"error":"bad_gateway","upstream":"myapp.localhost","message":"..."}`, with `error` set to `not_found`, `bad_gateway`, or `loop_detected`. Parse that JSON instead of scraping HTML. Responses from the app itself are forwarded unchanged.
+When portless itself returns an error (404 for an unknown host, 421 for a misdirected request, 502 when the app is unreachable, 508 for a request loop), the body depends on the `Accept` header. Browsers (`text/html`) get an HTML page. curl, `fetch`, and other clients get JSON such as `{"error":"bad_gateway","upstream":"myapp.localhost","message":"..."}`, with `error` set to `not_found`, `misdirected_request`, `bad_gateway`, or `loop_detected`. Parse that JSON instead of scraping HTML. Responses from the app itself are forwarded unchanged. Hostnames outside the portless TLDs, for example a site a DNS blocklist points at 127.0.0.1, get 421 Misdirected Request instead of the app list.
 
 `.localhost` domains resolve to `127.0.0.1` natively in Chrome, Firefox, and Edge. Safari relies on the system DNS resolver, which may not handle `.localhost` subdomains on all configurations. Run `portless hosts sync` to add entries to `/etc/hosts` if needed.
 
@@ -345,7 +345,15 @@ The chosen service configuration is written into launchd, systemd, or Task Sched
 | `portless run --help`                             | Show help for a subcommand (also: alias, hosts, clean)         |
 | `portless --version` / `-v`                       | Show version                                                   |
 
-**Reserved names:** `run`, `get`, `alias`, `hosts`, `list`, `doctor`, `trust`, `clean`, `prune`, `proxy`, and `service` are subcommands and cannot be used as app names directly. Use `portless run <cmd>` to infer the name, or `portless --name <name> <cmd>` to force any name including reserved ones.
+**Reserved names:** `run`, `get`, `alias`, `hosts`, `list`, `doctor`, `trust`, `clean`, `prune`, `proxy`, `service`, and `mcp` are subcommands and cannot be used as app names directly. Use `portless run <cmd>` to infer the name, or `portless --name <name> <cmd>` to force any name including reserved ones.
+
+## MCP server
+
+`portless mcp [--tools <profiles>]` starts a stdio MCP server. It defaults to `core`, which provides route listing, URL lookup, static alias management, and profile discovery. Add comma-separated `proxy`, `diagnostics`, or `all` profiles as needed. `default` aliases `core`, and `full` aliases `all`. The `tools_profiles` tool lists available profiles. Shared tool arguments are `cwd`, `extraArgs`, and `timeoutMs`; bad arguments (unknown or wrong type) and calls to a tool that is not enabled return a tool result with `isError: true` that explains the fix, so the model can correct its call; unknown arguments list the tool's own arguments. MCP does not run dev servers; start them with `portless run <cmd>` in a shell.
+
+```json
+{ "mcpServers": { "portless": { "command": "portless", "args": ["mcp"] } } }
+```
 
 ## portless.json
 
