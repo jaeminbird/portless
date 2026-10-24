@@ -481,6 +481,8 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
     );
 
     proxyReq.on("error", (err) => {
+      req.unpipe(proxyReq);
+      req.resume();
       onError(`Proxy error for ${getRequestHost(req)}: ${err.message}`);
       if (!res.headersSent) {
         const errWithCode = err as NodeJS.ErrnoException;
