@@ -589,6 +589,25 @@ describe("injectFrameworkFlags", () => {
     ]);
   });
 
+  it("injects for vitepress dev but not build", () => {
+    const dev = ["vitepress", "dev", "docs"];
+    injectFrameworkFlags(dev, 4567);
+    expect(dev).toEqual([
+      "vitepress",
+      "dev",
+      "docs",
+      "--port",
+      "4567",
+      "--strictPort",
+      "--host",
+      "127.0.0.1",
+    ]);
+
+    const build = ["vitepress", "build"];
+    injectFrameworkFlags(build, 4567);
+    expect(build).toEqual(["vitepress", "build"]);
+  });
+
   it("injects for rsbuild without --strictPort", () => {
     const args = ["rsbuild", "dev"];
     injectFrameworkFlags(args, 4567);
@@ -599,6 +618,85 @@ describe("injectFrameworkFlags", () => {
     const args = ["astro", "dev"];
     injectFrameworkFlags(args, 4567);
     expect(args).toEqual(["astro", "dev", "--port", "4567", "--host", "127.0.0.1"]);
+  });
+
+  it("injects for astro when a global flag precedes the subcommand", () => {
+    const devArgs = ["astro", "--root", "apps/web", "dev"];
+    injectFrameworkFlags(devArgs, 4567);
+    expect(devArgs).toEqual([
+      "astro",
+      "--root",
+      "apps/web",
+      "dev",
+      "--port",
+      "4567",
+      "--host",
+      "127.0.0.1",
+    ]);
+
+    const previewArgs = ["astro", "--config", "astro.config.mjs", "preview"];
+    injectFrameworkFlags(previewArgs, 4567);
+    expect(previewArgs).toEqual([
+      "astro",
+      "--config",
+      "astro.config.mjs",
+      "preview",
+      "--port",
+      "4567",
+      "--host",
+      "127.0.0.1",
+    ]);
+  });
+
+  it.each([[["--host", "0.0.0.0"]], [["--host=0.0.0.0"]]])(
+    "preserves an explicit astro host choice before the subcommand: %j",
+    (hostArgs) => {
+      const command = ["astro", "--root", "apps/web", ...hostArgs, "dev"];
+      const args = [...command];
+      injectFrameworkFlags(args, 4567);
+      expect(args).toEqual([...command, "--port", "4567"]);
+    }
+  );
+
+  it("injects astro flags before -- without treating trailing host data as an option", () => {
+    const args = ["astro", "--root", "apps/web", "dev", "--", "--host=0.0.0.0"];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([
+      "astro",
+      "--root",
+      "apps/web",
+      "dev",
+      "--port",
+      "4567",
+      "--host",
+      "127.0.0.1",
+      "--",
+      "--host=0.0.0.0",
+    ]);
+  });
+
+  it.each([
+    ["--root", "dev"],
+    ["--root", "preview"],
+    ["--config", "dev"],
+    ["--config", "preview"],
+  ])("does not mistake astro %s %s for a server subcommand", (flag, value) => {
+    const command = ["astro", flag, value, "build"];
+    const args = [...command];
+    expect(injectFrameworkFlags(args, 4567)).toEqual([]);
+    expect(args).toEqual(command);
+  });
+
+  it.each([
+    ["--root", "dev"],
+    ["--root", "preview"],
+    ["--config", "dev"],
+    ["--config", "preview"],
+  ])("recognizes astro dev after the consumed value %s %s", (flag, value) => {
+    const command = ["astro", flag, value, "dev"];
+    const args = [...command];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([...command, "--port", "4567", "--host", "127.0.0.1"]);
   });
 
   it("injects for ng without --strictPort", () => {
@@ -1033,6 +1131,128 @@ describe("injectFrameworkFlags", () => {
     expect(args).toEqual(["pnpm", "exec", "astro", "dev", "--port", "4567", "--host", "127.0.0.1"]);
   });
 
+  it("injects flags for npm exec astro dev with a separator", () => {
+    const args = ["npm", "exec", "astro", "dev"];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([
+      "npm",
+      "exec",
+      "astro",
+      "dev",
+      "--",
+      "--port",
+      "4567",
+      "--host",
+      "127.0.0.1",
+    ]);
+  });
+
+  it("injects flags for npm exec -- astro dev without an extra separator", () => {
+    const args = ["npm", "exec", "--", "astro", "dev"];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([
+      "npm",
+      "exec",
+      "--",
+      "astro",
+      "dev",
+      "--port",
+      "4567",
+      "--host",
+      "127.0.0.1",
+    ]);
+  });
+
+  it("injects flags for npm x astro dev with a separator", () => {
+    const args = ["npm", "x", "astro", "dev"];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([
+      "npm",
+      "x",
+      "astro",
+      "dev",
+      "--",
+      "--port",
+      "4567",
+      "--host",
+      "127.0.0.1",
+    ]);
+  });
+
+  it("injects flags for npm exec --package astro -- astro dev", () => {
+    const args = ["npm", "exec", "--package", "astro", "--", "astro", "dev"];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([
+      "npm",
+      "exec",
+      "--package",
+      "astro",
+      "--",
+      "astro",
+      "dev",
+      "--port",
+      "4567",
+      "--host",
+      "127.0.0.1",
+    ]);
+    const prefixed = ["npm", "--prefix", "./app", "exec", "--", "vite", "dev"];
+    injectFrameworkFlags(prefixed, 4567);
+    expect(prefixed).toEqual([
+      "npm",
+      "--prefix",
+      "./app",
+      "exec",
+      "--",
+      "vite",
+      "dev",
+      "--port",
+      "4567",
+      "--strictPort",
+      "--host",
+      "127.0.0.1",
+    ]);
+  });
+
+  it("appends only missing flags after a separator for npm exec astro dev -- --port 3000", () => {
+    const args = ["npm", "exec", "astro", "dev", "--", "--port", "3000"];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([
+      "npm",
+      "exec",
+      "astro",
+      "dev",
+      "--",
+      "--port",
+      "3000",
+      "--host",
+      "127.0.0.1",
+    ]);
+  });
+
+  it("injects past an option npm consumes for npm exec vite dev --port=3000", () => {
+    const args = ["npm", "exec", "vite", "dev", "--port=3000"];
+    injectFrameworkFlags(args, 4567);
+    expect(args).toEqual([
+      "npm",
+      "exec",
+      "vite",
+      "dev",
+      "--port=3000",
+      "--",
+      "--port",
+      "4567",
+      "--strictPort",
+      "--host",
+      "127.0.0.1",
+    ]);
+  });
+
+  it("does not inject when npm may consume an option value for npm exec vite --loglevel info build", () => {
+    const args = ["npm", "exec", "vite", "--loglevel", "info", "build"];
+    expect(injectFrameworkFlags(args, 4567)).toEqual([]);
+    expect(args).toEqual(["npm", "exec", "vite", "--loglevel", "info", "build"]);
+  });
+
   it("injects flags for npx rsbuild dev", () => {
     const args = ["npx", "rsbuild", "dev"];
     injectFrameworkFlags(args, 4567);
@@ -1456,6 +1676,23 @@ describe("injectPackageScriptFrameworkFlags", () => {
     const args = ["bun", "run", "dev"];
     injectPackageScriptFrameworkFlags(args, 4567, pkgDir);
     expect(args).toEqual(["bun", "run", "dev", "--port", "4567", "--strictPort"]);
+  });
+
+  it("forwards flags through a script that uses npm exec with a separator", () => {
+    writeScripts({ dev: "npm exec -- vite dev" });
+    const args = ["npm", "run", "dev"];
+    injectPackageScriptFrameworkFlags(args, 4567, pkgDir);
+    expect(args).toEqual([
+      "npm",
+      "run",
+      "dev",
+      "--",
+      "--port",
+      "4567",
+      "--strictPort",
+      "--host",
+      "127.0.0.1",
+    ]);
   });
 
   it("ignores commands that are not <pm> run <script>", () => {
